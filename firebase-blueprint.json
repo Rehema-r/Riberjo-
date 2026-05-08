@@ -1,0 +1,312 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Employee profile for RIBERJO",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "ADMIN", "SUPER_USER", "USER"] },
+        "departmentId": { "type": "string" },
+        "matricule": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "gender": { "type": "string", "enum": ["M", "F"] },
+        "birthDate": { "type": "string" },
+        "civilStatus": { "type": "string" },
+        "recruitmentYear": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "function": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "email": { "type": "string" },
+        "passwordChanged": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["fullName", "role", "matricule", "departmentId", "status"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "Organizational unit (Ferme, Santé, RH, Finance, Logistique, Marketing)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "description": { "type": "string" },
+        "directorId": { "type": "string" }
+      },
+      "required": ["name", "code"]
+    },
+    "FarmActivity": {
+      "title": "FarmActivity",
+      "description": "Agricultural or breeding log",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["culture", "élevage", "vétérinaire"] },
+        "subType": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "status": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["type", "title", "authorId", "createdAt"]
+    },
+    "MedicalRecord": {
+      "title": "MedicalRecord",
+      "description": "Patient consultation or treatment log",
+      "type": "object",
+      "properties": {
+        "patientName": { "type": "string" },
+        "consultationType": { "type": "string" },
+        "diagnosis": { "type": "string" },
+        "treatment": { "type": "string" },
+        "medications": { "type": "array" },
+        "practitionerId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["patientName", "practitionerId", "createdAt"]
+    },
+    "FinanceTransaction": {
+      "title": "FinanceTransaction",
+      "description": "Income or expense record",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "validated", "rejected"] },
+        "authorId": { "type": "string" },
+        "validatedBy": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["type", "amount", "authorId", "createdAt"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Logistics stock item",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "minThreshold": { "type": "number" },
+        "location": { "type": "string" },
+        "lastUpdatedBy": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["name", "quantity", "unit"]
+    },
+    "SaleRecord": {
+      "title": "SaleRecord",
+      "description": "Marketing product sales",
+      "type": "object",
+      "properties": {
+        "productName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "price": { "type": "number" },
+        "total": { "type": "number" },
+        "clientName": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["productName", "quantity", "price", "sellerId", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Internal communication message",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "chatId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "type": { "type": "string", "enum": ["text", "file"] },
+        "fileUrl": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["senderId", "text", "createdAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Operational and expert reports",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "pending", "validated", "rejected"] },
+        "authorId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "validatorId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["title", "content", "status", "authorId", "departmentId", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Operational missions and assignments",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] },
+        "assigneeId": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "deadline": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["title", "status", "assigneeId", "creatorId", "departmentId", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notifications",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "title", "message", "read", "createdAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "System-wide activity audit log",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "details": { "type": "string" },
+        "targetId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["type", "userId", "userName", "details", "createdAt"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Daily employee attendance log",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "checkIn": { "type": "number" },
+        "checkOut": { "type": "number" },
+        "isLate": { "type": "boolean" },
+        "status": { "type": "string" }
+      },
+      "required": ["userId", "date", "status"]
+    },
+    "Payroll": {
+      "title": "Payroll",
+      "description": "Employee salary payments",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "month": { "type": "number" },
+        "year": { "type": "number" },
+        "netSalary": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["userId", "month", "year", "netSalary", "status"]
+    },
+    "AppDocument": {
+      "title": "AppDocument",
+      "description": "Archived and active documents",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["title", "type", "fileUrl", "status"]
+    },
+    "CalendarEvent": {
+      "title": "CalendarEvent",
+      "description": "Scheduled meetings and activities",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "start": { "type": "number" },
+        "end": { "type": "number" },
+        "type": { "type": "string" }
+      },
+      "required": ["title", "start", "end", "type"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Employee directory"
+    },
+    "departments/{deptId}": {
+      "schema": "Department",
+      "description": "Business departments"
+    },
+    "farm_activities/{activityId}": {
+      "schema": "FarmActivity",
+      "description": "Agricultural and breeding logs"
+    },
+    "medical_records/{recordId}": {
+      "schema": "MedicalRecord",
+      "description": "Health department records"
+    },
+    "finance_transactions/{transactionId}": {
+      "schema": "FinanceTransaction",
+      "description": "Budget and cash flow"
+    },
+    "inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Logistics stock"
+    },
+    "sales/{saleId}": {
+      "schema": "SaleRecord",
+      "description": "Marketing sales activity"
+    },
+    "chats/{chatId}/messages/{msgId}": {
+      "schema": "ChatMessage",
+      "description": "Communication history"
+    },
+    "reports/{reportId}": {
+      "schema": "Report",
+      "description": "Department reports"
+    },
+    "tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Work assignments"
+    },
+    "notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    },
+    "activities/{activityId}": {
+      "schema": "ActivityLog",
+      "description": "Global activity audit"
+    },
+    "attendance/{attId}": {
+      "schema": "Attendance",
+      "description": "Daily attendance"
+    },
+    "payroll/{payId}": {
+      "schema": "Payroll",
+      "description": "Salary records"
+    },
+    "documents/{docId}": {
+      "schema": "AppDocument",
+      "description": "Company document archive"
+    },
+    "calendar_events/{eventId}": {
+      "schema": "CalendarEvent",
+      "description": "Company calendar"
+    }
+  }
+}

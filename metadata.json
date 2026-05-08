@@ -1,0 +1,6 @@
+{
+  "name": "RIBERJO Management",
+  "description": "Système de gestion d'entreprise centralisé pour RIBERJO : gestion des rôles (DG, Directeurs, Experts, Travailleurs), flux de rapports, messagerie interne, et tableaux de bord intelligents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
