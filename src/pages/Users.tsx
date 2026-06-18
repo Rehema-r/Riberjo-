@@ -884,7 +884,9 @@ export default function Users() {
                                 ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
                                 : user.role === "SUPER_USER"
                                   ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
-                                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white border-slate-200 dark:border-slate-700"
+                                  : user.role === "BOARD_MEMBER"
+                                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white border-slate-200 dark:border-slate-700"
                           }`}
                         >
                           {user.role.replace("_", " ")}
@@ -1024,7 +1026,9 @@ export default function Users() {
                             ? "bg-purple-500/10 text-purple-600 border-purple-500/20 dark:text-purple-400"
                             : user.role === "ADMIN"
                               ? "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                              : user.role === "BOARD_MEMBER"
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
                         }`}
                       >
                         {user.role.replace("_", " ")}
