@@ -47,13 +47,20 @@ import * as XLSX from "xlsx";
 
 import { notificationService } from "../services/notificationService";
 
-export default function Users() {
+export default function Users({ initialActiveTab }: { initialActiveTab?: string }) {
   const { profile } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [roles, setRoles] = useState<RolePermission[]>([]);
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [activeRoleTab, setActiveRoleTab] = useState<string>(initialActiveTab || "all");
+
+  useEffect(() => {
+    if (initialActiveTab) {
+      setActiveRoleTab(initialActiveTab);
+    }
+  }, [initialActiveTab]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
@@ -452,9 +459,10 @@ export default function Users() {
 
   const filteredUsers = users.filter(
     (u) =>
-      (u.fullName || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+      ((u.fullName || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
       (u.matricule || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
-      (u.email || '').toLowerCase().includes((searchTerm || '').toLowerCase()),
+      (u.email || '').toLowerCase().includes((searchTerm || '').toLowerCase())) &&
+      (activeRoleTab === "all" || u.role === activeRoleTab),
   );
 
   const exportToCSV = () => {
@@ -599,15 +607,64 @@ export default function Users() {
           )}
           {canAddWorker && (
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                const defaultRole = activeRoleTab === "all" ? "USER" : (activeRoleTab as any);
+                const defaultDept = defaultRole === "BOARD_MEMBER" ? "all" : "";
+                const defaultService = defaultRole === "BOARD_MEMBER" ? "all" : "";
+                setFormData({
+                  fullName: "",
+                  email: "",
+                  address: "",
+                  phone: "",
+                  recruitmentYear: "2026",
+                  serviceId: defaultService,
+                  departmentId: defaultDept,
+                  role: defaultRole,
+                  baseSalary: 150,
+                  password: "",
+                });
+                setIsModalOpen(true);
+              }}
               className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 dark:shadow-none"
             >
               <UserPlus size={20} />
-              Ajouter un membre
+              {activeRoleTab === "BOARD_MEMBER" ? "Ajouter membre CA" : "Ajouter un membre"}
             </button>
           )}
         </div>
       </div>
+
+      {profile?.role === "SUPER_ADMIN" && (
+        <div className="flex flex-wrap gap-2 mb-8 bg-slate-100/50 dark:bg-slate-800/40 p-1.5 rounded-2xl border border-slate-200/50 dark:border-slate-800 select-none">
+          {[
+            { id: "all", label: "Tous", count: users.length },
+            { id: "BOARD_MEMBER", label: "Conseil d'Administration (CA)", count: users.filter(u => u.role === "BOARD_MEMBER").length },
+            { id: "ADMIN", label: "Directeurs", count: users.filter(u => u.role === "ADMIN").length },
+            { id: "SUPER_USER", label: "Experts", count: users.filter(u => u.role === "SUPER_USER").length },
+            { id: "USER", label: "Travailleurs", count: users.filter(u => u.role === "USER").length },
+            { id: "CLIENT", label: "Clients", count: users.filter(u => u.role === "CLIENT").length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveRoleTab(tab.id)}
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-200 flex items-center gap-2 ${
+                activeRoleTab === tab.id
+                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md"
+                  : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50"
+              }`}
+            >
+              {tab.label}
+              <span className={`text-[10px] px-2 py-0.5 rounded-md font-black ${
+                activeRoleTab === tab.id
+                  ? "bg-emerald-500 text-white"
+                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+              }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden mb-12">
         <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex flex-col md:flex-row gap-4 justify-between">
@@ -767,7 +824,7 @@ export default function Users() {
                             onChange={(e) => setTempDept(e.target.value)}
                             className="text-[10px] font-bold uppercase px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                           >
-                            {(user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
+                            {(user.role === "ADMIN" || user.role === "SUPER_ADMIN" || user.role === "BOARD_MEMBER") && (
                               <option value="all">TOUS</option>
                             )}
                             {DEPARTMENTS.map((d) => (
@@ -1311,7 +1368,7 @@ export default function Users() {
                         className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
                       >
                         <option value="">Sélectionner</option>
-                        {(formData.role === "ADMIN" || formData.role === "SUPER_ADMIN") && (
+                        {(formData.role === "ADMIN" || formData.role === "SUPER_ADMIN" || formData.role === "BOARD_MEMBER") && (
                           <option value="all">Tous les départements (Général / Admin)</option>
                         )}
                         {DEPARTMENTS.map((d) => (

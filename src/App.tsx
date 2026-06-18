@@ -33,18 +33,18 @@ import { notificationService } from './services/notificationService';
 export default function App() {
   const { user, profile, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [showSplash, setShowSplash] = useState(true);
   const [redirectedMatricule, setRedirectedMatricule] = useState<string | null>(null);
+  const [showSplash, setShowSplash] = useState(true);
   const [isPublicRegister, setIsPublicRegister] = useState(window.location.pathname === '/register-client');
   const [verifyId, setVerifyId] = useState<string | null>(
     window.location.pathname.startsWith('/verify/') ? window.location.pathname.split('/verify/')[1] : null
   );
 
   useEffect(() => {
-    // Reset redirect and clear page to 'dashboard' if profile is logged out or not yet loaded
+    // Clear page to 'dashboard' if profile is logged out or not yet loaded
     if (!profile) {
-      setRedirectedMatricule(null);
       setCurrentPage('dashboard');
+      setRedirectedMatricule(null);
     }
   }, [profile]);
 
@@ -63,7 +63,7 @@ export default function App() {
       if (profile.role === 'CLIENT' && currentPage === 'dashboard') {
         setCurrentPage('client-dashboard');
         setRedirectedMatricule(profile.matricule);
-      } else if (profile.role !== 'SUPER_ADMIN' && currentPage === 'dashboard') {
+      } else if (profile.role !== 'SUPER_ADMIN' && profile.role !== 'BOARD_MEMBER' && currentPage === 'dashboard') {
         const getDeptPage = (deptId: string): string | null => {
           if (!deptId) return null;
           const clean = deptId.trim().toLowerCase();
@@ -96,11 +96,9 @@ export default function App() {
           // Wait for departmentId to be normalized or fetched
           console.log("departmentId is empty or loading, waiting to redirect...");
         } else {
-          // departmentId is not matched, don't block
+          // departmentId is not matched, don't block subsequent navigation
           setRedirectedMatricule(profile.matricule);
         }
-      } else {
-        setRedirectedMatricule(profile.matricule);
       }
     }
   }, [profile, currentPage, redirectedMatricule]);
@@ -219,6 +217,7 @@ export default function App() {
       case 'dashboard': return <Dashboard />;
       case 'profile': return <Settings initialTab="profile" />;
       case 'users': return <Users />;
+      case 'board_members': return <Users initialActiveTab="BOARD_MEMBER" />;
       case 'departments': return <Departments />;
       case 'reports': return <Reports />;
       case 'tasks': return <Tasks />;

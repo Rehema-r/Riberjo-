@@ -105,7 +105,7 @@ export default function Dashboard() {
         const usersSnap = await getDocs(collection(db, 'users'));
 
         // Base data fetching based on role
-        if (profile.role === 'SUPER_ADMIN') {
+        if (profile.role === 'SUPER_ADMIN' || profile.role === 'BOARD_MEMBER') {
           // DG View: Global stats
           const [reportsSnap, tasksSnap, farmSnap, medSnap, financeSnap, salesSnap] = await Promise.all([
             getDocs(collection(db, 'reports')),
@@ -298,7 +298,7 @@ export default function Dashboard() {
           let countVal: any = deptAssets.length;
           let labelVal = "Matériels";
 
-          if (profile.role === 'SUPER_ADMIN') {
+          if (profile.role === 'SUPER_ADMIN' || profile.role === 'BOARD_MEMBER') {
             if (dept.id === '01') {
               countVal = farmSize;
               labelVal = "Activités de production";

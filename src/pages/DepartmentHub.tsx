@@ -21,6 +21,7 @@ export default function DepartmentHub({ departmentId }: { departmentId?: string 
   const [activeSpace, setActiveSpace] = useState<'USER' | 'SUPER_USER' | 'ADMIN'>(initSpace);
 
   // Authorization rules
+  const canAccessUser = profile?.role === 'USER' || profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER';
   const canAccessSuperUser = profile?.role === 'SUPER_USER' || profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER';
   const canAccessAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER';
 
@@ -91,14 +92,23 @@ export default function DepartmentHub({ departmentId }: { departmentId?: string 
         
         <div className="flex flex-wrap gap-1.5 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-2xl">
           <button
-            onClick={() => setActiveSpace('USER')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] transition-all border-none cursor-pointer ${
+            onClick={() => {
+              if (canAccessUser) {
+                setActiveSpace('USER');
+              }
+            }}
+            disabled={!canAccessUser}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] transition-all border-none ${
+              !canAccessUser
+                ? 'text-slate-300 dark:text-slate-600 grayscale opacity-40 cursor-not-allowed'
+                : 'cursor-pointer'
+            } ${
               activeSpace === 'USER'
                 ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                : canAccessUser ? 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300' : ''
             }`}
           >
-            <Users size={13} /> Employé
+            {canAccessUser ? <Users size={13} /> : <Lock size={12} className="text-red-500" />} Employé
           </button>
           
           <button
