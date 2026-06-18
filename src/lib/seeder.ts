@@ -11,9 +11,51 @@ export const TEST_ACCOUNTS = [
     departmentId: "Direction Générale"
   },
   {
+    matricule: "26/RBJ-CA-001",
+    fullName: "Conseiller Admin Riberjo",
+    role: "BOARD_MEMBER" as const,
+    password: "Riberjo202!",
+    departmentId: "all"
+  },
+  {
     matricule: "26/RBJ-AD-03-001",
     fullName: "Chef Ressources Humaines",
     role: "ADMIN" as const,
+    password: "Riberjo202!",
+    departmentId: "03"
+  },
+  {
+    matricule: "26/RBJ-SU-01-002",
+    fullName: "Chef Production Agricole",
+    role: "SUPER_USER" as const,
+    password: "Riberjo202!",
+    departmentId: "01"
+  },
+  {
+    matricule: "26/RBJ-US-01-001",
+    fullName: "Agent de Production Agricole",
+    role: "USER" as const,
+    password: "Riberjo202!",
+    departmentId: "01"
+  },
+  {
+    matricule: "26/RBJ-SU-02-001",
+    fullName: "Chef Santé & Médical",
+    role: "SUPER_USER" as const,
+    password: "Riberjo202!",
+    departmentId: "02"
+  },
+  {
+    matricule: "26/RBJ-US-02-002",
+    fullName: "Médecin Généraliste",
+    role: "USER" as const,
+    password: "Riberjo202!",
+    departmentId: "02"
+  },
+  {
+    matricule: "26/RBJ-US-03-002",
+    fullName: "Agent Ressources Humaines",
+    role: "USER" as const,
     password: "Riberjo202!",
     departmentId: "03"
   },
@@ -25,11 +67,39 @@ export const TEST_ACCOUNTS = [
     departmentId: "04"
   },
   {
-    matricule: "26/RBJ-US-01-001",
-    fullName: "Agent de Production Agricole",
+    matricule: "26/RBJ-US-04-002",
+    fullName: "Comptable Adjoint",
     role: "USER" as const,
     password: "Riberjo202!",
-    departmentId: "01"
+    departmentId: "04"
+  },
+  {
+    matricule: "26/RBJ-SU-05-001",
+    fullName: "Chef Stock & Logistique",
+    role: "SUPER_USER" as const,
+    password: "Riberjo202!",
+    departmentId: "05"
+  },
+  {
+    matricule: "26/RBJ-US-05-002",
+    fullName: "Agent de Stock Riberjo",
+    role: "USER" as const,
+    password: "Riberjo202!",
+    departmentId: "05"
+  },
+  {
+    matricule: "26/RBJ-SU-06-001",
+    fullName: "Chef Ventes & Marché",
+    role: "SUPER_USER" as const,
+    password: "Riberjo202!",
+    departmentId: "06"
+  },
+  {
+    matricule: "26/RBJ-US-06-002",
+    fullName: "Caissier Principal",
+    role: "USER" as const,
+    password: "Riberjo202!",
+    departmentId: "06"
   },
   {
     matricule: "CLT-RBJ-000001",

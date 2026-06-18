@@ -21,10 +21,10 @@ export default function Login() {
     let isMounted = true;
     const checkAndAutoSeed = async () => {
       try {
-        const adDocRef = doc(db, 'users', '26_RBJ-AD-03-001');
+        const adDocRef = doc(db, 'users', '26_RBJ-CA-001');
         const adSnap = await getDoc(adDocRef);
         if (!adSnap.exists() && isMounted) {
-          console.log("Demo accounts missing, auto-seeding default demo accounts...");
+          console.log("BOARD_MEMBER account missing, auto-seeding demo accounts...");
           setSeedStatus('loading');
           const { seedApp } = await import('../lib/seeder');
           await seedApp();
@@ -473,6 +473,14 @@ export default function Login() {
                   password: "Riberjo202!",
                   badge: "Accès Total",
                   badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400"
+                },
+                {
+                  role: "Conseiller Admin Riberjo",
+                  desc: "Membre CA • Accès Lecture Seule Tout",
+                  matricule: "26/RBJ-CA-001",
+                  password: "Riberjo202!",
+                  badge: "Conseil d'Admin (CA)",
+                  badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                 },
                 {
                   role: "Chef Ressources Humaines",
