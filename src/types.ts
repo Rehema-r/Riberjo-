@@ -1,4 +1,4 @@
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SUPER_USER' | 'USER' | 'CLIENT';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SUPER_USER' | 'USER' | 'CLIENT' | 'BOARD_MEMBER';
 
 export type ClientType = 'STANDARD' | 'PARTNER' | 'PREMIUM' | 'ORGANIZATION' | 'COOPERATIVE' | 'PARENT' | 'PATIENT';
 

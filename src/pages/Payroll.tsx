@@ -17,8 +17,8 @@ export default function PayrollPage() {
   useEffect(() => {
     if (!profile) return;
 
-    // Use matricule for users, or fetch all for admins
-    const q = profile.role === 'SUPER_ADMIN' || profile.role === 'ADMIN' || profile.departmentId === '03' || profile.departmentId === '04'
+    // Use matricule for users, or fetch all for admins/board members
+    const q = profile.role === 'SUPER_ADMIN' || profile.role === 'ADMIN' || profile.role === 'BOARD_MEMBER' || profile.departmentId === '03' || profile.departmentId === '04'
       ? query(collection(db, 'payroll'), orderBy('createdAt', 'desc'), limit(50))
       : query(collection(db, 'payroll'), where('userId', '==', profile.matricule), orderBy('createdAt', 'desc'), limit(12));
 
@@ -99,7 +99,7 @@ export default function PayrollPage() {
           <p className="text-slate-500 dark:text-slate-400 font-medium">Gestion des rémunérations et fiches de paie.</p>
         </div>
         <div className="flex items-center gap-3">
-          {(profile?.role === 'SUPER_ADMIN' || profile?.departmentId === 'all' || profile?.departmentId === '03' || profile?.departmentId === '04') && (
+          {profile?.role !== 'BOARD_MEMBER' && (profile?.role === 'SUPER_ADMIN' || profile?.departmentId === 'all' || profile?.departmentId === '03' || profile?.departmentId === '04') && (
             <button className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl shadow-lg transition-all flex items-center gap-2">
               <DollarSign size={16} /> Générer Paie du Mois
             </button>

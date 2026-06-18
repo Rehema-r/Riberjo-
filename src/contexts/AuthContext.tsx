@@ -35,6 +35,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const activeProfile = simulatedProfile !== undefined ? simulatedProfile : profile;
 
   useEffect(() => {
+    // Proactively secure and auto-bootstrap Board Member role in Firestore
+    const ensureBoardRole = async () => {
+       try {
+         const ref = doc(db, 'role_permissions', 'BOARD_MEMBER');
+         const snap = await getDoc(ref);
+         if (!snap.exists()) {
+           await setDoc(ref, {
+             role: 'BOARD_MEMBER',
+             label: "Conseil d'Administration",
+             description: 'Accès en lecture seule à tous les départements pour observation.',
+             permissions: {
+               manageUsers: false, manageDept: false, validateReports: false, manageAssets: false,
+               manageProtocols: false, manageSettings: false, viewReports: true, createTasks: false, accessArchive: true
+             }
+           });
+         }
+       } catch (e) {
+         console.warn("Skip auto-provisioning BOARD_MEMBER:", e);
+       }
+    };
+    ensureBoardRole();
+
     // Listen to role permissions globally
     const unsubscribe = onSnapshot(collection(db, 'role_permissions'), 
       (snapshot) => {
@@ -59,6 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!activeProfile) return false;
     // SUPER_ADMIN always has all permissions
     if (activeProfile.role === 'SUPER_ADMIN') return true;
+    
+    if (activeProfile.role === 'BOARD_MEMBER') {
+      return permission === 'viewReports' || permission === 'accessArchive';
+    }
     
     const perms = rolePermissions[activeProfile.role];
     if (!perms) return false;

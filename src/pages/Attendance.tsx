@@ -22,7 +22,7 @@ export default function AttendancePage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'late' | 'absent'>('all');
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
-  const isHR = profile?.role === 'SUPER_ADMIN' || profile?.departmentId === 'all' || profile?.departmentId === '03';
+  const isHR = profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER' || profile?.departmentId === 'all' || profile?.departmentId === '03';
 
   useEffect(() => {
     if (!profile) return;
@@ -210,6 +210,10 @@ export default function AttendancePage() {
   };
 
   const handleApproval = async (id: string, approved: boolean) => {
+    if (profile?.role === 'BOARD_MEMBER') {
+       alert("Le Conseil d'Administration ne dispose que de droits d'accès en lecture seule.");
+       return;
+    }
     try {
       await updateDoc(doc(db, 'attendance', id), {
         approvalStatus: approved ? 'approved' : 'rejected',
@@ -414,20 +418,25 @@ export default function AttendancePage() {
                         </span>
                       </td>
                       <td className="px-8 py-5 text-right">
-                        <div className="flex justify-end gap-2">
-                           <button 
-                            onClick={() => handleApproval(row.id, true)}
-                            className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
-                           >
-                             <Check size={16} />
-                           </button>
-                           <button 
-                            onClick={() => handleApproval(row.id, false)}
-                            className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
-                           >
-                             <X size={16} />
-                           </button>
-                        </div>
+                        {profile?.role !== 'BOARD_MEMBER' && (
+                          <div className="flex justify-end gap-2">
+                             <button 
+                              onClick={() => handleApproval(row.id, true)}
+                              className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
+                             >
+                               <Check size={16} />
+                             </button>
+                             <button 
+                              onClick={() => handleApproval(row.id, false)}
+                              className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                             >
+                               <X size={16} />
+                             </button>
+                          </div>
+                        )}
+                        {profile?.role === 'BOARD_MEMBER' && (
+                          <span className="text-xs text-slate-400 italic font-medium">Lecture seule</span>
+                        )}
                       </td>
                     </tr>
                   ))}

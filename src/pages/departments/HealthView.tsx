@@ -19,7 +19,7 @@ interface VitalRecord {
 
 export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'USER' | 'SUPER_USER' | 'ADMIN' }) {
   const { profile } = useAuth();
-  const isGrantedExpertWrite = profile?.role !== 'USER';
+  const isGrantedExpertWrite = profile?.role !== 'USER' && profile?.role !== 'BOARD_MEMBER';
   
   // Tabs: 'records' for Medical dossiers, 'inventory' for Pharmacy stock
   const [activeTab, setActiveTab] = useState<'records' | 'inventory'>('records');

@@ -142,6 +142,11 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
   ];
 
   const filteredItems = menuItems.filter(item => {
+    if (profile?.role === 'BOARD_MEMBER') {
+      // Board Member can see all tabs except system setup
+      return item.id !== 'settings';
+    }
+
     const roleMatch = item.roles.includes(profile?.role || '');
     if (!roleMatch) return false;
     

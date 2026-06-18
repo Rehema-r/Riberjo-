@@ -12,7 +12,7 @@ export default function DepartmentHub({ departmentId }: { departmentId?: string 
   const { profile } = useAuth();
   
   // Choose default space based on role
-  const initSpace = (profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN') 
+  const initSpace = (profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER') 
     ? 'ADMIN' 
     : (profile?.role === 'SUPER_USER') 
       ? 'SUPER_USER' 
@@ -21,12 +21,12 @@ export default function DepartmentHub({ departmentId }: { departmentId?: string 
   const [activeSpace, setActiveSpace] = useState<'USER' | 'SUPER_USER' | 'ADMIN'>(initSpace);
 
   // Authorization rules
-  const canAccessSuperUser = profile?.role === 'SUPER_USER' || profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN';
-  const canAccessAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN';
+  const canAccessSuperUser = profile?.role === 'SUPER_USER' || profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER';
+  const canAccessAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER';
 
   useEffect(() => {
     if (profile) {
-      const nextSpace = (profile.role === 'ADMIN' || profile.role === 'SUPER_ADMIN') 
+      const nextSpace = (profile.role === 'ADMIN' || profile.role === 'SUPER_ADMIN' || profile.role === 'BOARD_MEMBER') 
         ? 'ADMIN' 
         : (profile.role === 'SUPER_USER') 
           ? 'SUPER_USER' 

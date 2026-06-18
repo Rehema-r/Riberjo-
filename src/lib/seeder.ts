@@ -95,6 +95,15 @@ export const ROLE_PERMISSIONS: RolePermission[] = [
       manageUsers: false, manageDept: false, validateReports: false, manageAssets: false,
       manageProtocols: false, manageSettings: false, viewReports: false, createTasks: false, accessArchive: false
     }
+  },
+  {
+    role: 'BOARD_MEMBER',
+    label: 'Conseil d\'Administration',
+    description: 'Accès en lecture seule à tous les départements pour observation.',
+    permissions: {
+      manageUsers: false, manageDept: false, validateReports: false, manageAssets: false,
+      manageProtocols: false, manageSettings: false, viewReports: true, createTasks: false, accessArchive: true
+    }
   }
 ];
 

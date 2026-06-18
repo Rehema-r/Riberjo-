@@ -43,6 +43,7 @@ export const SERVICE_CODES: Record<string, string> = {
   'ADMIN': 'AD',        // Administration
   'SUPER_USER': 'SU',   // Supervision
   'USER': 'US',        // Exécution / Travailleur
+  'BOARD_MEMBER': 'CA', // Conseil d'Administration
 };
 
 /**

@@ -853,6 +853,7 @@ export default function Users() {
                                 <option value="SUPER_USER">Expert</option>
                                 <option value="ADMIN">Directeur</option>
                                 <option value="SUPER_ADMIN">DG</option>
+                                <option value="BOARD_MEMBER">Conseil d'Administration</option>
                               </>
                             )}
                           </select>
@@ -1402,6 +1403,7 @@ export default function Users() {
                         <option value="SUPER_USER">Expert</option>
                         <option value="ADMIN">Directeur</option>
                         <option value="SUPER_ADMIN">DG</option>
+                        <option value="BOARD_MEMBER">Conseil d'Administration</option>
                         <option value="CLIENT">Client</option>
                       </>
                     )}
@@ -1876,6 +1878,7 @@ export default function Users() {
                         <option value="SUPER_USER">Expert</option>
                         <option value="ADMIN">Directeur</option>
                         <option value="SUPER_ADMIN">DG</option>
+                        <option value="BOARD_MEMBER">Conseil d'Administration</option>
                         <option value="CLIENT">Client</option>
                       </select>
                     </div>
