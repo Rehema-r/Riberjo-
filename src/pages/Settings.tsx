@@ -667,21 +667,27 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Modèle structuré haute définition conforme aux standards.</p>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-3">
                    <button 
-                    onClick={() => window.print()}
-                    className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:text-slate-900 dark:hover:text-white transition-all shadow-sm"
-                    title="Imprimer"
+                     onClick={() => window.print()}
+                     className="flex items-center justify-center gap-2 px-5 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95 shadow-sm"
+                     title="Imprimer la carte de service"
                    >
-                     <Printer size={18} />
+                     <Printer size={16} />
+                     <span>Imprimer</span>
                    </button>
                    <button 
-                    onClick={handleDownloadCard}
-                    disabled={isExporting}
-                    className={`p-3 rounded-xl transition-all shadow-sm flex items-center gap-2 ${isExporting ? 'bg-slate-100 text-slate-400' : 'bg-brand text-white hover:brightness-110'}`}
-                    title="Télécharger PDF"
+                     onClick={handleDownloadCard}
+                     disabled={isExporting}
+                     className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-emerald-500/10 ${
+                       isExporting 
+                         ? 'bg-slate-100 text-slate-400 dark:bg-slate-850 cursor-not-allowed' 
+                         : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-500/20'
+                     }`}
+                     title="Télécharger la carte en PDF"
                    >
-                     {isExporting ? <RefreshCw size={18} className="animate-spin" /> : <Download size={18} />}
+                     {isExporting ? <RefreshCw size={16} className="animate-spin" /> : <Download size={16} />}
+                     <span>{isExporting ? "Téléchargement..." : "Télécharger PDF"}</span>
                    </button>
                 </div>
               </div>
@@ -759,8 +765,14 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
 
                     {/* Footer QR */}
                     <div className="mt-auto mb-8 px-10 flex items-center justify-between">
-                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100 shadow-inner">
-                        <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={48} level="M" />
+                      <div className="flex items-center gap-2">
+                        <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100 shadow-inner">
+                          <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={48} level="M" />
+                        </div>
+                        <div className="text-left leading-none">
+                          <p className="text-[6px] font-black text-emerald-600 uppercase tracking-wider mb-0.5">VÉRIFIER</p>
+                          <p className="text-[5px] font-bold text-slate-450 uppercase tracking-normal leading-tight">Scanner pour<br/>l'authenticité</p>
+                        </div>
                       </div>
                       <div className="text-right">
                         <div className="h-10 w-24 border-b-2 border-slate-900 mb-1 opacity-20"></div>
@@ -862,8 +874,14 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                         </div>
                     </div>
                     <div className="mt-auto mb-12 px-14 flex items-center justify-between">
-                        <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
-                            <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={64} level="H" />
+                        <div className="flex items-center gap-3">
+                            <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                                <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={64} level="H" />
+                            </div>
+                            <div className="text-left leading-none">
+                                <p className="text-[8px] font-black text-emerald-600 uppercase tracking-wider mb-1">VÉRIFIER L'AUTHENTICITÉ</p>
+                                <p className="text-[7px] font-medium text-slate-400 uppercase tracking-normal leading-normal">Scanner le code QR pour<br/>vérifier l'authenticité</p>
+                            </div>
                         </div>
                         <div className="text-right">
                             <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>

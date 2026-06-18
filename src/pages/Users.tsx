@@ -80,7 +80,6 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
     matricule: string;
     password: string;
   } | null>(null);
-  const [showCard, setShowCard] = useState<UserProfile | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     userId: string;
     fullName: string;
@@ -370,92 +369,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
     }
   };
 
-  const handlePrintCard = async (user: UserProfile) => {
-    const doc = new jsPDF({
-      orientation: "landscape",
-      unit: "mm",
-      format: [85.6, 54], // CR80 standard credit card size
-    });
 
-    // Get QR Code Data URL from the canvas in the preview modal
-    const qrCanvas = document.querySelector(
-      "#id-card-riberjo canvas",
-    ) as HTMLCanvasElement;
-    const qrDataUrl = qrCanvas?.toDataURL("image/png");
-
-    // Background Color
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(0, 0, 85.6, 54, 3, 3, "F");
-
-    // Top Bar
-    doc.setFillColor(5, 122, 85); // emerald-700
-    doc.rect(0, 0, 85.6, 12, "F");
-
-    // Header Text
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text("RIBERJO GLOBAL SERVICE", 5, 7);
-    doc.setFontSize(6);
-    doc.text("CARTE DE TRAVAIL OFFICIELLE", 55, 7);
-
-    // Profile Photo
-    if (user.avatarUrl) {
-      try {
-        doc.addImage(user.avatarUrl, "JPEG", 5, 17, 20, 20);
-      } catch (e) {
-        doc.setDrawColor(240, 240, 240);
-        doc.setFillColor(245, 245, 245);
-        doc.roundedRect(5, 17, 20, 20, 2, 2, "FD");
-        doc.setTextColor(200, 200, 200);
-        doc.setFontSize(18);
-        doc.text(user.fullName.charAt(0), 15, 30, { align: "center" });
-      }
-    } else {
-      doc.setDrawColor(240, 240, 240);
-      doc.setFillColor(245, 245, 245);
-      doc.roundedRect(5, 17, 20, 20, 2, 2, "FD");
-      doc.setTextColor(200, 200, 200);
-      doc.setFontSize(18);
-      doc.text(user.fullName.charAt(0), 15, 30, { align: "center" });
-    }
-
-    // Details logic
-    doc.setTextColor(30, 41, 59); // slate-800
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text(user.fullName.toUpperCase(), 30, 22);
-
-    doc.setTextColor(16, 185, 129); // emerald-500
-    doc.setFontSize(7);
-    doc.setFont("helvetica", "bold");
-    doc.text(user.role.replace("_", " "), 30, 26);
-
-    doc.setTextColor(148, 163, 184); // slate-400
-    doc.setFontSize(6);
-    doc.setFont("helvetica", "bold");
-    doc.text("MATRICULE:", 30, 34);
-    doc.text("DEPT:", 30, 38);
-    doc.text("RECRUTEMENT:", 30, 42);
-
-    doc.setTextColor(51, 65, 85); // slate-700
-    doc.setFontSize(7);
-    doc.setFont("helvetica", "bold");
-    doc.text(user.matricule, 52, 34);
-    doc.text(user.departmentId, 52, 38);
-    doc.text(user.recruitmentYear || "2026", 52, 42);
-
-    // QR Code
-    if (qrDataUrl) {
-      doc.addImage(qrDataUrl, "PNG", 65, 17, 15, 15);
-    }
-
-    // Footer
-    doc.setFillColor(16, 185, 129);
-    doc.rect(0, 52, 85.6, 2, "F");
-
-    doc.save(`Carte_Service_${user.matricule.replace(/\//g, "_")}.pdf`);
-  };
 
   const filteredUsers = users.filter(
     (u) =>
@@ -1021,16 +935,6 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                             <Trash2 size={16} />
                           </button>
                         )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowCard(user);
-                          }}
-                          className="p-2.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/5 rounded-xl transition-all"
-                          title="Imprimer Carte Service"
-                        >
-                          <IdCard size={16} />
-                        </button>
                         <button className="p-2.5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
                           <MoreVertical size={16} />
                         </button>
@@ -1161,21 +1065,12 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                 >
                   <button
                     type="button"
-                    onClick={() => setShowCard(user)}
-                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200/50 dark:border-slate-700/50 active:scale-95 transition-all flex items-center justify-center gap-1.5 text-xs font-black uppercase tracking-wider"
-                    title="Aperçu Carte"
-                  >
-                    <IdCard size={15} />
-                    <span>Carte ID</span>
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => openDetailModal(user)}
                     className="flex-grow flex-1 py-3 bg-brand hover:brightness-110 text-white rounded-xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-xs font-black uppercase tracking-wider"
                     title="Ouvrir le dossier"
                   >
                     <FileText size={15} />
-                    <span>Dossier</span>
+                    <span>Dossier de l'employé</span>
                   </button>
                   {profile?.role === "SUPER_ADMIN" && (
                     <button
@@ -1526,126 +1421,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {showCard && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCard(null)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[2rem] sm:rounded-[3.5rem] shadow-2xl overflow-hidden"
-            >
-              <div className="p-5 sm:p-8 border-b border-slate-50 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
-                <h3 className="text-base sm:text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                  Prévisualisation de la Carte
-                </h3>
-                <button
-                  onClick={() => setShowCard(null)}
-                  className="p-2 hover:bg-white dark:hover:bg-slate-800 rounded-xl shadow-sm transition-all text-slate-400 hover:text-slate-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
 
-              <div className="p-6 sm:p-12 flex flex-col items-center w-full overflow-hidden">
-                <div className="w-full max-w-[440px] md:w-[450px] md:h-[280px] bg-white rounded-3xl shadow-2xl relative overflow-hidden border border-slate-100 p-6 md:p-8 flex flex-col sm:flex-row gap-4 sm:gap-6 shrink-0 text-slate-900">
-                  <div className="absolute top-0 left-0 w-full h-3 bg-emerald-600"></div>
-                  <div className="w-full sm:w-1/3 flex flex-col items-center gap-3 sm:gap-4 shrink-0">
-                    <div className="w-20 h-20 md:w-24 md:h-24 bg-slate-100 rounded-2xl flex items-center justify-center text-3xl md:text-4xl font-black text-slate-300 border-2 border-slate-50 shrink-0">
-                      {showCard.fullName.charAt(0)}
-                    </div>
-                    <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-50 shrink-0">
-                      <QRCodeCanvas
-                        value={`${window.location.origin}/verify/${showCard.matricule.replace(/\//g, "_")}`}
-                        size={64}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex-1 space-y-3 md:space-y-4 text-center sm:text-left min-w-0">
-                    <div className="flex justify-center sm:justify-between items-start">
-                      <div>
-                        <p className="text-[9px] md:text-[10px] font-black text-emerald-600 uppercase tracking-widest leading-none mb-1">
-                          RIBERJO GLOBAL SERVICE
-                        </p>
-                        <h4 className="text-base md:text-xl font-black text-slate-900 uppercase tracking-tighter leading-tight truncate">
-                          {showCard.fullName}
-                        </h4>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 md:space-y-4">
-                      <div>
-                        <p className="text-[7px] md:text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
-                          Matricule
-                        </p>
-                        <p className="font-mono text-xs md:text-sm font-bold text-slate-700">
-                          {showCard.matricule}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[7px] md:text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
-                          Fonction & Département
-                        </p>
-                        <p className="text-[11px] md:text-xs font-black text-slate-900 uppercase tracking-tight truncate">
-                          {showCard.role.replace("_", " ")} •{" "}
-                          {DEPARTMENTS.find((d) => d.id === showCard.departmentId)?.name || showCard.departmentId} ({showCard.departmentId})
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[7px] md:text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
-                          Service Affecté
-                        </p>
-                        <p className="text-[11px] md:text-xs font-black text-slate-900 uppercase tracking-tight truncate">
-                          {(() => {
-                            const matchingService = SERVICES_LIST.find(
-                              (s) =>
-                                s.deptId === showCard.departmentId &&
-                                s.id === showCard.serviceId,
-                            );
-                            if (matchingService) {
-                              return `${matchingService.name} (${matchingService.id})`;
-                            }
-                            return showCard.serviceId ? `Service ${showCard.serviceId}` : "Général";
-                          })()}
-                        </p>
-                      </div>
-                      <div className="flex justify-between items-end pt-3 md:pt-4 border-t border-slate-50">
-                        <div className="text-left">
-                          <p className="text-[6px] md:text-[7px] font-black text-slate-300 uppercase tracking-widest">
-                            Date émission
-                          </p>
-                          <p className="text-[7px] md:text-[8px] font-bold text-slate-400">
-                            {new Date().toLocaleDateString()}
-                          </p>
-                        </div>
-                        <span className="text-[9px] md:text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                          Officiel
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-8 sm:mt-12 flex gap-4 w-full max-w-sm">
-                  <button
-                    onClick={() => handlePrintCard(showCard)}
-                    className="flex-1 py-4 bg-emerald-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-500/20 hover:scale-105 transition-all flex items-center justify-center gap-2 text-xs"
-                  >
-                    <Printer size={18} /> Télécharger PDF
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {isDetailModalOpen && selectedUser && (
@@ -2037,156 +1813,6 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                     </div>
                   )}
                 </form>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showCard && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCard(null)}
-              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, rotateY: 90 }}
-              animate={{ opacity: 1, scale: 1, rotateY: 0 }}
-              exit={{ opacity: 0, scale: 0.9, rotateY: -90 }}
-              transition={{ type: "spring", damping: 20 }}
-              className="relative w-full max-w-sm"
-            >
-              {/* ID Card Front */}
-              <div
-                id="id-card-riberjo"
-                className="bg-white rounded-[2rem] overflow-hidden shadow-2xl aspect-[1.58/1] relative border-4 border-slate-50"
-              >
-                {/* Top Bar */}
-                <div className="h-14 bg-emerald-700 flex items-center px-6 justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-emerald-700 font-black text-sm shadow-inner">
-                      R
-                    </div>
-                    <span className="text-white font-black text-[10px] tracking-tight uppercase">
-                      RIBERJO GLOBAL SERVICE
-                    </span>
-                  </div>
-                  <span className="text-emerald-300 font-black text-[8px] uppercase tracking-widest border border-emerald-500/50 px-2 py-1 rounded">
-                    CARTE DE TRAVAIL
-                  </span>
-                </div>
-
-                {/* Content */}
-                <div className="p-6 flex gap-6">
-                  <div className="w-24 h-24 bg-slate-100 rounded-2xl flex items-center justify-center border-2 border-slate-50 shadow-inner shrink-0 overflow-hidden">
-                    {showCard.avatarUrl ? (
-                      <img
-                        src={showCard.avatarUrl || null}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-3xl font-black text-slate-300">
-                        {showCard.fullName.charAt(0)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1">
-                          {showCard.fullName}
-                        </h3>
-                        <p className="text-[10px] font-bold text-emerald-600 mb-4 uppercase tracking-widest">
-                          {showCard.role.replace("_", " ")}
-                        </p>
-                      </div>
-                      <div className="bg-white p-1 rounded-lg border border-slate-100 shadow-sm">
-                        <QRCodeCanvas
-                          value={`${window.location.origin}/verify/${showCard.matricule.replace(/\//g, "_")}`}
-                          size={48}
-                          level="L"
-                          includeMargin={false}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                          Matricule:
-                        </span>
-                        <span className="text-[10px] font-mono font-bold text-slate-700">
-                          {showCard.matricule}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                          Dépt:
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-700 uppercase">
-                          {DEPARTMENTS.find((d) => d.id === showCard.departmentId)?.name || showCard.departmentId} ({showCard.departmentId})
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                          Service:
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-700 uppercase truncate max-w-[160px]">
-                          {(() => {
-                            const matchingService = SERVICES_LIST.find(
-                              (s) =>
-                                s.deptId === showCard.departmentId &&
-                                s.id === showCard.serviceId,
-                            );
-                            if (matchingService) {
-                              return `${matchingService.name} (${matchingService.id})`;
-                            }
-                            return showCard.serviceId ? `Service ${showCard.serviceId}` : "Général";
-                          })()}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                          Recrutement:
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-700">
-                          {showCard.recruitmentYear || "N/A"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer Decoration */}
-                <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-brand/10 bg-gradient-to-r from-emerald-500 via-yellow-500 to-emerald-500"></div>
-
-                {/* Watermark Logo */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-[0.03] scale-150">
-                  <div className="w-40 h-40 bg-emerald-900 rounded-full flex items-center justify-center text-white font-black text-9xl">
-                    R
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="mt-8 flex gap-4">
-                <button
-                  onClick={() => setShowCard(null)}
-                  className="flex-1 py-4 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white font-bold rounded-2xl border border-white/10 transition-all uppercase text-xs tracking-widest"
-                >
-                  Fermer
-                </button>
-                <button
-                  onClick={() => showCard && handlePrintCard(showCard)}
-                  className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl shadow-xl shadow-emerald-900/20 transition-all flex items-center justify-center gap-2 uppercase text-xs tracking-widest"
-                >
-                  <Printer size={16} /> Imprimer
-                </button>
               </div>
             </motion.div>
           </div>
