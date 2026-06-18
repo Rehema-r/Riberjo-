@@ -19,6 +19,7 @@ export default function Reports() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingReport, setViewingReport] = useState<Report | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'validated' | 'rejected'>('all');
+  const [deptFilter, setDeptFilter] = useState<string>('all');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -42,7 +43,11 @@ export default function Reports() {
       if (profile.role === 'SUPER_USER') {
         q = query(collection(db, reportsPath), where('authorId', '==', profile.id), orderBy('createdAt', 'desc'));
       } else if (profile.role === 'ADMIN') {
-        q = query(collection(db, reportsPath), where('departmentId', '==', profile.departmentId), orderBy('createdAt', 'desc'));
+        if (profile.departmentId === 'all') {
+          q = query(collection(db, reportsPath), orderBy('createdAt', 'desc'));
+        } else {
+          q = query(collection(db, reportsPath), where('departmentId', '==', profile.departmentId), orderBy('createdAt', 'desc'));
+        }
       }
 
       const snap = await getDocs(q).catch(err => {
@@ -296,9 +301,11 @@ export default function Reports() {
     doc.save(`Rapport_${report.title.replace(/\s+/g, '_')}_${report.id.slice(0,5)}.pdf`);
   };
 
-  const filteredReports = reports.filter(r => 
-    statusFilter === 'all' ? true : r.status === statusFilter
-  );
+  const filteredReports = reports.filter(r => {
+    const statusMatch = statusFilter === 'all' ? true : r.status === statusFilter;
+    const deptMatch = deptFilter === 'all' ? true : r.departmentId === deptFilter;
+    return statusMatch && deptMatch;
+  });
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -369,20 +376,38 @@ export default function Reports() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 mb-8">
-        {(['all', 'pending', 'validated', 'rejected'] as const).map(s => (
-          <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              statusFilter === s 
-                ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xl shadow-slate-200 dark:shadow-none' 
-                : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800'
-            }`}
-          >
-            {s === 'all' ? 'Tous' : s === 'pending' ? 'En attente' : s === 'validated' ? 'Validés' : 'Rejetés'}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+        <div className="flex flex-wrap items-center gap-3">
+          {(['all', 'pending', 'validated', 'rejected'] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                statusFilter === s 
+                  ? 'bg-slate-900 dark:bg-white dark:text-slate-900 text-white shadow-xl shadow-slate-200 dark:shadow-none' 
+                  : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800'
+              }`}
+            >
+              {s === 'all' ? 'Tous' : s === 'pending' ? 'En attente' : s === 'validated' ? 'Validés' : 'Rejetés'}
+            </button>
+          ))}
+        </div>
+
+        {(profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN') && (
+          <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+            <Filter size={14} className="ml-3 text-slate-400" />
+            <select
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="bg-transparent border-none text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white focus:ring-0 pr-8 cursor-pointer"
+            >
+              <option value="all">Tous les Départements</option>
+              {departments.map(dept => (
+                <option key={dept.id} value={dept.id}>{dept.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4">

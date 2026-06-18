@@ -349,8 +349,10 @@ export default function Departments() {
                         {allUsers.filter(u => u.departmentId === selectedDept.id).map(user => (
                           <div key={user.id} className="p-4 flex items-center justify-between group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold uppercase border border-slate-50 dark:border-slate-700">
-                                {user.fullName.charAt(0)}
+                              <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold uppercase border border-slate-50 dark:border-slate-700 overflow-hidden">
+                                {user.avatarUrl ? (
+                                  <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                ) : user.fullName.charAt(0)}
                               </div>
                               <div>
                                 <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{user.fullName}</p>

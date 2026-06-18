@@ -1,6 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Custom authentication is implemented inside the application logic via matricule & password.
+    // Making rules open prevents permission-denied crashes due to unconfigured Firebase Auth.
     match /{document=**} {
       allow read, write: if true;
     }

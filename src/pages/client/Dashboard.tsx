@@ -9,6 +9,7 @@ import {
   Download, 
   Calendar, 
   ShoppingBag, 
+  ShoppingCart,
   MessageSquare, 
   ShieldCheck, 
   ArrowUpRight, 
@@ -133,7 +134,7 @@ export default function ClientDashboard() {
                  </div>
 
                  <div className="bg-white p-4 rounded-3xl mb-8 shadow-xl">
-                    <QRCodeCanvas value={`RIBERJO:${profile?.id}`} size={160} />
+                    <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.id}`} size={160} />
                  </div>
 
                  <div className="text-center space-y-1 mb-8">

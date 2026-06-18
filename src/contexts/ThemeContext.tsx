@@ -10,7 +10,10 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
-    return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (saved) {
+      return saved === 'dark';
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
   useEffect(() => {
@@ -23,7 +26,30 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isDarkMode]);
 
-  const toggleTheme = () => setIsDarkMode(prev => !prev);
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    const handleSystemThemeChange = (e: MediaQueryListEvent) => {
+      const hasSavedTheme = localStorage.getItem('theme');
+      // If the user hasn't forced a manual preference, or to adapt dynamically to system changes
+      if (!hasSavedTheme) {
+        setIsDarkMode(e.matches);
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleSystemThemeChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleSystemThemeChange);
+    };
+  }, []);
+
+  const toggleTheme = () => {
+    setIsDarkMode(prev => {
+      const nextValue = !prev;
+      localStorage.setItem('theme', nextValue ? 'dark' : 'light');
+      return nextValue;
+    });
+  };
 
   return (
     <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>

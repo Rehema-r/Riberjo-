@@ -3,7 +3,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, doc, getDocs, where, updateDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { Chat as ChatType, Message, UserProfile, Department } from '../types';
-import { Send, Hash, User as UserIcon, MoreVertical, Plus, Search, Paperclip, Smile } from 'lucide-react';
+import { Send, Hash, User as UserIcon, MoreVertical, Plus, Search, Paperclip, Smile, X, Image as ImageIcon, FileText, Download, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Chat() {
@@ -13,7 +13,12 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -74,28 +79,76 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+    if (file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    } else {
+      setPreviewUrl(null);
+    }
+  };
+
+  const removeFile = () => {
+    setSelectedFile(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !activeChat || !profile) return;
+    if ((!newMessage.trim() && !selectedFile) || !activeChat || !profile) return;
 
     const msgText = newMessage.trim();
+    const fileToUpload = selectedFile;
+    
     setNewMessage('');
+    removeFile();
 
     try {
+      let fileUrl = '';
+      let messageType: 'text' | 'file' = 'text';
+
+      if (fileToUpload) {
+        setIsUploading(true);
+        messageType = 'file';
+        // Simulation d'upload en base64 pour la démo
+        // Note: En production, utilisez Firebase Storage
+        const reader = new FileReader();
+        fileUrl = await new Promise((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(fileToUpload);
+        });
+      }
+
       await addDoc(collection(db, 'chats', activeChat.id, 'messages'), {
         senderId: profile.id,
         senderName: profile.fullName,
         text: msgText,
+        type: messageType,
+        fileUrl: fileUrl,
+        fileName: fileToUpload?.name || '',
+        fileSize: fileToUpload?.size || 0,
         createdAt: Date.now()
       });
 
       // Update last message in chat
       await updateDoc(doc(db, 'chats', activeChat.id), {
-        lastMessage: msgText,
+        lastMessage: messageType === 'file' ? `📁 Fichier: ${fileToUpload?.name}` : msgText,
         updatedAt: Date.now()
       });
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -197,7 +250,32 @@ export default function Chat() {
                         ? 'bg-emerald-600 text-white rounded-tr-none shadow-xl shadow-emerald-100 dark:shadow-black/20' 
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none'
                     }`}>
-                      <p className="text-sm font-medium leading-relaxed">{msg.text}</p>
+                      {msg.type === 'file' && msg.fileUrl && (
+                        <div className="mb-3 overflow-hidden rounded-2xl bg-black/5 dark:bg-white/5 border border-white/10">
+                          {msg.fileUrl.startsWith('data:image/') || msg.fileName?.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                            <img 
+                              src={msg.fileUrl} 
+                              alt="Joint" 
+                              className="w-full h-auto max-h-64 object-cover cursor-pointer hover:opacity-90 transition-opacity" 
+                              onClick={() => window.open(msg.fileUrl)}
+                            />
+                          ) : (
+                            <div className="p-4 flex items-center gap-3">
+                              <div className="p-2 bg-white/20 rounded-xl">
+                                <FileText size={24} />
+                              </div>
+                              <div className="flex-1 overflow-hidden">
+                                <p className="text-xs font-bold truncate">{msg.fileName}</p>
+                                <p className="text-[10px] opacity-60">{(msg.fileSize || 0) / 1024 < 1024 ? `${((msg.fileSize || 0) / 1024).toFixed(1)} KB` : `${((msg.fileSize || 0) / 1024 / 1024).toFixed(1)} MB`}</p>
+                              </div>
+                              <a href={msg.fileUrl} download={msg.fileName} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                                <Download size={18} />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {msg.text && <p className="text-sm font-medium leading-relaxed">{msg.text}</p>}
                       <p className={`text-[9px] mt-2 opacity-50 font-bold ${isMe ? 'text-right' : ''}`}>
                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
@@ -210,26 +288,68 @@ export default function Chat() {
 
             {/* Input */}
             <div className="p-6 border-t border-slate-50 dark:border-slate-800 bg-slate-50/10 dark:bg-slate-800/10">
+               <AnimatePresence>
+                 {selectedFile && (
+                   <motion.div 
+                     initial={{ opacity: 0, y: 10 }}
+                     animate={{ opacity: 1, y: 0 }}
+                     exit={{ opacity: 0, y: 10 }}
+                     className="mb-4 p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-3xl flex items-center gap-4 shadow-sm"
+                   >
+                     {previewUrl ? (
+                        <div className="w-16 h-16 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-inner">
+                          <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                        </div>
+                     ) : (
+                        <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400">
+                          <FileText size={32} />
+                        </div>
+                     )}
+                     <div className="flex-1 overflow-hidden">
+                        <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{selectedFile.name}</p>
+                        <p className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                     </div>
+                     <button 
+                       onClick={removeFile}
+                       className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all"
+                     >
+                       <X size={20} />
+                     </button>
+                   </motion.div>
+                 )}
+               </AnimatePresence>
+
                <form onSubmit={handleSendMessage} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 p-2 pl-6 rounded-3xl flex items-center gap-4 shadow-sm focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
-                  <button type="button" className="text-slate-400 hover:text-emerald-600">
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-slate-400 hover:text-emerald-600 transition-colors"
+                  >
                     <Paperclip size={20} />
                   </button>
                   <input 
                     type="text" 
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Écrivez votre message..." 
+                    placeholder={selectedFile ? "Ajoutez une légende..." : "Écrivez votre message..."} 
                     className="flex-1 border-none bg-transparent focus:ring-0 text-sm py-3 font-medium text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"
                   />
                    <button type="button" className="text-slate-400 hover:text-emerald-600">
                     <Smile size={20} />
                   </button>
                   <button 
-                    disabled={!newMessage.trim()}
+                    disabled={(!newMessage.trim() && !selectedFile) || isUploading}
                     type="submit" 
                     className="w-12 h-12 bg-emerald-600 text-white rounded-[1.25rem] flex items-center justify-center hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 dark:shadow-none disabled:opacity-50 disabled:shadow-none"
                   >
-                    <Send size={20} />
+                    {isUploading ? <RefreshCw size={20} className="animate-spin" /> : <Send size={20} />}
                   </button>
                </form>
             </div>

@@ -194,7 +194,7 @@ export default function DocumentsPage() {
                 {doc.signed && doc.signatureUrl && (
                   <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 text-center">Signature Validée</p>
-                    <img src={doc.signatureUrl} alt="Signature" className="h-10 mx-auto opacity-80" />
+                    <img src={doc.signatureUrl || null} alt="Signature" className="h-10 mx-auto opacity-80" />
                   </div>
                 )}
               </div>

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, ArrowUpRight, ArrowDownLeft, DollarSign, Wallet, FileCheck, Search, Filter, PieChart } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { CreditCard, ArrowUpRight, ArrowDownLeft, DollarSign, Wallet, FileCheck, Search, Filter, PieChart, BarChart3 } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot, limit, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { FinanceTransaction } from '../../types';
 import { motion } from 'motion/react';
 
-export default function FinanceView() {
+export default function FinanceView({ activeSpace = 'USER' }: { activeSpace?: 'USER' | 'SUPER_USER' | 'ADMIN' }) {
   const { profile } = useAuth();
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -17,6 +18,13 @@ export default function FinanceView() {
     description: '',
     status: 'pending'
   });
+
+  // User Space (Claims and advances requests)
+  const [claimAmount, setClaimAmount] = useState<number>(0);
+  const [claimDesc, setClaimDesc] = useState<string>('');
+  const [claimCat, setClaimCat] = useState<string>('Transport');
+  const [claimsList, setClaimsList] = useState<any[]>([]);
+  const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
 
   useEffect(() => {
     const q = query(
@@ -29,8 +37,43 @@ export default function FinanceView() {
       setTransactions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinanceTransaction)));
     });
 
-    return () => unsubscribe();
+    const qClaims = query(
+      collection(db, 'finance_claims'),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribeClaims = onSnapshot(qClaims, (snapshot) => {
+      setClaimsList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeClaims();
+    };
   }, []);
+
+  const handleClaimReimbursement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    setIsSubmittingClaim(true);
+    try {
+      await addDoc(collection(db, 'finance_claims'), {
+        amount: claimAmount,
+        description: claimDesc,
+        category: claimCat,
+        authorName: profile.fullName,
+        authorId: profile.id,
+        status: 'pending',
+        createdAt: Date.now()
+      });
+      alert("Note de frais soumise avec succès aux comptables !");
+      setClaimAmount(0);
+      setClaimDesc('');
+    } catch (err) {
+      console.error("Error creating claim:", err);
+    } finally {
+      setIsSubmittingClaim(false);
+    }
+  };
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,22 +96,194 @@ export default function FinanceView() {
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
 
+  // Month calculation
+  const now = new Date();
+  const currentMonthName = now.toLocaleString('fr-FR', { month: 'long' });
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const expenseByCategory = transactions
+    .filter(t => {
+      const date = new Date(t.createdAt);
+      return t.type === 'expense' && date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    })
+    .reduce((acc, t) => {
+      acc[t.category] = (acc[t.category] || 0) + t.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const chartData = Object.entries(expenseByCategory).map(([name, amount]) => ({
+    name,
+    amount
+  })).sort((a, b) => b.amount - a.amount);
+
+  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Finance & Comptabilité</h1>
-          <p className="text-slate-500 font-medium">Gestion des flux monétaires, budgets et validations.</p>
-        </div>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-6 py-3 bg-slate-900 dark:bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 dark:hover:bg-emerald-700 transition-all shadow-lg active:scale-95"
-        >
-          <CreditCard size={16} /> Nouvelle Opération
-        </button>
-      </div>
+      {activeSpace === 'USER' ? (
+        /* Collaborator / Agent Space */
+        <div className="space-y-8">
+          <div>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Finance & Comptabilité</h1>
+            <p className="text-slate-500 font-medium">Espace Collaborateur : Saisie des notes de frais, demandes de remboursement et avances de frais.</p>
+          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              {/* Note de frais request form */}
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mb-6 flex items-center gap-2">
+                  <CreditCard className="text-blue-600" size={24} /> Déclarer une Note de Frais
+                </h3>
+
+                <form onSubmit={handleClaimReimbursement} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Montant ($)</label>
+                      <input 
+                        type="number"
+                        required
+                        value={claimAmount || ''}
+                        onChange={(e) => setClaimAmount(parseFloat(e.target.value) || 0)}
+                        placeholder="Ex: 120"
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm font-bold focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Catégorie de Frais</label>
+                      <select
+                        value={claimCat}
+                        onChange={(e) => setClaimCat(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm font-bold"
+                      >
+                        <option value="Transport">Transport / Carburant</option>
+                        <option value="Repas">Restauration / Mission</option>
+                        <option value="Hébergement">Hébergement</option>
+                        <option value="Matériel">Petit Outillage / Matériel</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Description / Justification</label>
+                    <input 
+                      type="text"
+                      required
+                      value={claimDesc}
+                      onChange={(e) => setClaimDesc(e.target.value)}
+                      placeholder="Ex: Plein gasoil tracteur lors du transport de semences"
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm font-bold focus:outline-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingClaim}
+                    className="flex items-center justify-center gap-2 w-full py-4 bg-slate-900 dark:bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-800 dark:hover:bg-blue-700 transition shadow-lg shadow-blue-600/20"
+                  >
+                    {isSubmittingClaim ? 'Traitement...' : 'Envoyer ma note de frais'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Claims History logs */}
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mb-4">Mes Demandes Récentes</h3>
+                <p className="text-xs text-slate-400 font-medium mb-6">Consultez l'historique et le statut de remboursement de vos notes de frais.</p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-slate-50/50 dark:bg-slate-800/10 border-b border-slate-100 dark:border-slate-800">
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Justification</th>
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Catégorie</th>
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Montant</th>
+                        <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 dark:divide-slate-805">
+                      {claimsList.filter(c => c.authorId === profile?.id).map((c) => (
+                        <tr key={c.id} className="text-xs">
+                          <td className="px-6 py-4 font-bold text-slate-900 dark:text-white uppercase">{c.description}</td>
+                          <td className="px-6 py-4 font-bold text-slate-550">{c.category}</td>
+                          <td className="px-6 py-4 text-right font-black text-blue-600">${c.amount}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex justify-center">
+                              <span className={`text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${
+                                c.status === 'validated' ? 'bg-emerald-100 text-emerald-700' :
+                                c.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {c.status === 'validated' ? 'Payé' : c.status === 'rejected' ? 'Refusé' : 'En attente'}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {claimsList.filter(c => c.authorId === profile?.id).length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="py-10 text-center text-slate-400 font-black text-[9px] uppercase tracking-widest">Aucun remboursement demandé actuellement.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* Daily remaining or advances stats card */}
+              <div className="bg-blue-950 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl">
+                <h3 className="text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-2">
+                  <Wallet className="text-blue-400" size={24} /> Avance de Trésorerie
+                </h3>
+                <p className="text-xs text-slate-400 font-medium leading-relaxed mb-6">
+                  Vous pouvez solliciter une avance sur frais de déplacement ou de mission directement auprès du service comptable.
+                </p>
+
+                <div className="p-5 bg-white/5 rounded-3xl border border-white/10 mb-6">
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Plafond Autorisé</p>
+                  <p className="text-3xl font-black text-white mt-1">$500</p>
+                  <p className="text-[9px] text-slate-400 mt-2 font-mono">Renouvelable après validation des justificatifs de la mission précédente.</p>
+                </div>
+
+                <button
+                  onClick={() => alert("Demande d'avance transférée à votre responsable de service.")}
+                  className="w-full py-4 bg-blue-500 text-white hover:bg-blue-600 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-blue-500/10 text-center"
+                >
+                  Solliciter une Avance de $200
+                </button>
+                <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
+              </div>
+
+              {/* Policy note */}
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Charte de Remboursement</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-sans">
+                  Veillez à conserver les photos ou reçus numériques de chaque achat de carburant ou équipement. Les demandes non justifiées seront renvoyées au collaborateur pour précision.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Original Administrative Dashboard */
+        <>
+          <div className="flex justify-between items-end">
+            <div>
+              <h1 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Finance & Comptabilité</h1>
+              <p className="text-slate-500 font-medium">Espace Expert : Gestion globale des flux monétaires, budgets et validations.</p>
+            </div>
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-slate-900 dark:bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 dark:hover:bg-emerald-700 transition-all shadow-lg active:scale-95"
+            >
+              <CreditCard size={16} /> Nouvelle Opération
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
@@ -129,6 +344,68 @@ export default function FinanceView() {
           </div>
         </div>
       </div>
+
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-sm"
+      >
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Analyse des Dépenses</h3>
+            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">Répartition par catégorie • {currentMonthName} {currentYear}</p>
+          </div>
+          <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-400">
+            <BarChart3 size={20} />
+          </div>
+        </div>
+
+        <div className="h-[300px] w-full">
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 40, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#94a3b8" opacity={0.1} />
+                <XAxis type="number" hide />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 9, fontWeight: 800, fill: '#94a3b8' }}
+                  width={100}
+                />
+                <Tooltip 
+                  cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                  contentStyle={{ 
+                    backgroundColor: '#0f172a', 
+                    border: 'none', 
+                    borderRadius: '16px',
+                    fontSize: '10px',
+                    fontWeight: 'bold',
+                    padding: '12px',
+                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'
+                  }}
+                  itemStyle={{ color: '#fff' }}
+                  labelStyle={{ color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                  formatter={(value: number) => [`$${value.toLocaleString()}`, 'Total']}
+                />
+                <Bar dataKey="amount" radius={[0, 8, 8, 0]} barSize={32}>
+                  {chartData.map((_entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 gap-4">
+              <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-full">
+                <PieChart size={40} className="opacity-50" />
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest">Aucune dépense enregistrée pour {currentMonthName}</p>
+            </div>
+          )}
+        </div>
+      </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-3 space-y-6">
@@ -223,6 +500,9 @@ export default function FinanceView() {
           </div>
         </div>
       </div>
+        </>
+      )}
+
 
       {showAddModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -269,8 +549,11 @@ export default function FinanceView() {
                 <input 
                   type="number"
                   required
-                  value={newTransaction.amount}
-                  onChange={(e) => setNewTransaction({...newTransaction, amount: parseFloat(e.target.value)})}
+                  value={isNaN(newTransaction.amount) ? '' : newTransaction.amount}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setNewTransaction({...newTransaction, amount: isNaN(val) ? 0 : val});
+                  }}
                   className="w-full text-5xl font-black text-center bg-transparent text-slate-900 dark:text-white border-b-2 border-slate-100 dark:border-slate-800 focus:border-emerald-500 focus:outline-none py-2"
                   placeholder="0.00"
                 />

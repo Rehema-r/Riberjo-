@@ -25,12 +25,29 @@ export default function Tasks() {
   const [sortBy, setSortBy] = useState<'deadline' | 'status' | 'createdAt'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [view, setView] = useState<'list' | 'calendar'>('list');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  const [submittingReportTask, setSubmittingReportTask] = useState<Task | null>(null);
+  const [reportText, setReportText] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectingTask, setRejectingTask] = useState<Task | null>(null);
+
+  const TASK_CATEGORIES = [
+    'Appel entrant',
+    'Support technique',
+    'Maintenance',
+    'Admin',
+    'Terrain',
+    'Logistique',
+    'Autre'
+  ];
 
   // Form State
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    category: 'Autre',
     priority: 'medium' as 'low' | 'medium' | 'high',
     assigneeId: '',
     departmentId: profile?.departmentId || '',
@@ -75,14 +92,26 @@ export default function Tasks() {
       if (profile.role === 'USER') {
         q = query(collection(db, tasksPath), where('assigneeId', '==', profile.id), orderBy('createdAt', 'desc'));
       } else if (profile.role === 'ADMIN') {
-        q = query(collection(db, tasksPath), where('departmentId', '==', profile.departmentId), orderBy('createdAt', 'desc'));
+        if (profile.departmentId === 'all') {
+          q = query(collection(db, tasksPath), orderBy('createdAt', 'desc'));
+        } else {
+          q = query(collection(db, tasksPath), where('departmentId', '==', profile.departmentId), orderBy('createdAt', 'desc'));
+        }
       }
 
       const snap = await getDocs(q).catch(err => {
         handleFirestoreError(err, OperationType.LIST, tasksPath);
         return { docs: [] } as any;
       });
-      setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task)));
+      setTasks(snap.docs.map(d => {
+        const data = d.data();
+        return { 
+          id: d.id, 
+          subTasks: [], 
+          dependencies: [], 
+          ...data 
+        } as Task;
+      }));
 
       const usersPath = 'users';
       const usersSnap = await getDocs(collection(db, usersPath)).catch(err => {
@@ -140,6 +169,7 @@ export default function Tasks() {
         description: '', 
         priority: 'medium', 
         assigneeId: '', 
+        category: 'Autre',
         departmentId: profile?.departmentId || '', 
         deadline: '',
         subTasks: [],
@@ -152,6 +182,11 @@ export default function Tasks() {
   };
 
   const toggleTaskStatus = async (task: Task) => {
+    if (task.status !== 'completed' && (profile?.role === 'USER' || profile?.role === 'SUPER_USER')) {
+      setSubmittingReportTask(task);
+      setReportText('');
+      return;
+    }
     const taskPath = `tasks/${task.id}`;
     const nextStatus = task.status === 'completed' ? 'pending' : 'completed';
     const nextProgress = nextStatus === 'completed' ? 100 : 0;
@@ -159,7 +194,7 @@ export default function Tasks() {
       await updateDoc(doc(db, 'tasks', task.id), { 
         status: nextStatus,
         progress: nextProgress,
-        subTasks: task.subTasks.map(st => ({ ...st, completed: nextStatus === 'completed' }))
+        subTasks: (task.subTasks || []).map(st => ({ ...st, completed: nextStatus === 'completed' }))
       });
       
       await activityService.log({
@@ -177,17 +212,160 @@ export default function Tasks() {
     }
   };
 
+  const handleSubmissionReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!submittingReportTask) return;
+    const task = submittingReportTask;
+
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), {
+        status: 'pending_validation',
+        completionReportText: reportText,
+        progress: 100,
+        subTasks: (task.subTasks || []).map(st => ({ ...st, completed: true }))
+      });
+
+      await addDoc(collection(db, 'reports'), {
+        title: `Rapport de fin de mission : ${task.title}`,
+        content: reportText,
+        status: 'pending',
+        authorId: profile?.id || '',
+        departmentId: task.departmentId,
+        taskId: task.id,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+
+      await activityService.log({
+        type: 'report_created',
+        userId: profile?.id || '',
+        userName: profile?.fullName || 'Utilisateur',
+        details: `A soumis le rapport de fin de mission pour "${task.title}"`,
+        departmentId: task.departmentId,
+        targetId: task.id
+      });
+
+      await notificationService.notifyRole(
+        'ADMIN',
+        'Rapport de Tâche à Valider',
+        `Un nouveau rapport de fin de mission pour "${task.title}" a été soumis par ${profile?.fullName}.`,
+        'info'
+      );
+      await notificationService.notifyRole(
+        'SUPER_ADMIN',
+        'Rapport de Tâche à Valider',
+        `Un nouveau rapport de fin de mission pour "${task.title}" a été soumis par ${profile?.fullName}.`,
+        'info'
+      );
+
+      setSubmittingReportTask(null);
+      setReportText('');
+      setViewingTask(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err, OperationType.WRITE, 'reports');
+    }
+  };
+
+  const handleValidateTask = async (task: Task) => {
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), {
+        status: 'completed',
+        progress: 100,
+        updatedAt: Date.now()
+      });
+
+      const reportsSnap = await getDocs(query(collection(db, 'reports'), where('taskId', '==', task.id)));
+      const updatePromises = reportsSnap.docs.map(reportDoc => 
+        updateDoc(doc(db, 'reports', reportDoc.id), {
+          status: 'validated',
+          validatorId: profile?.id,
+          updatedAt: Date.now()
+        })
+      );
+      await Promise.all(updatePromises);
+
+      await activityService.log({
+        type: 'task_completed',
+        userId: profile?.id || '',
+        userName: profile?.fullName || 'Manager',
+        details: `A validé le rapport de fin de mission et marqué "${task.title}" comme terminée`,
+        targetId: task.id,
+        departmentId: task.departmentId
+      });
+
+      await notificationService.notify(
+        task.assigneeId,
+        "Mission Validée 🎉",
+        `Votre rapport de fin de mission pour "${task.title}" a été validé par ${profile?.fullName ?? 'le manager'}. Félicitations !`,
+        'task'
+      );
+
+      setViewingTask(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err, OperationType.UPDATE, `tasks/${task.id}`);
+    }
+  };
+
+  const handleRejectTask = async (task: Task, reason: string) => {
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), {
+        status: 'in_progress',
+        progress: 50,
+        updatedAt: Date.now()
+      });
+
+      const reportsSnap = await getDocs(query(collection(db, 'reports'), where('taskId', '==', task.id)));
+      const updatePromises = reportsSnap.docs.map(reportDoc => 
+        updateDoc(doc(db, 'reports', reportDoc.id), {
+          status: 'rejected',
+          validatorId: profile?.id,
+          updatedAt: Date.now()
+        })
+      );
+      await Promise.all(updatePromises);
+
+      await activityService.log({
+        type: 'task_rejected',
+        userId: profile?.id || '',
+        userName: profile?.fullName || 'Manager',
+        details: `A rejeté le rapport de fin de mission pour "${task.title}". Raison : ${reason}`,
+        targetId: task.id,
+        departmentId: task.departmentId
+      });
+
+      await notificationService.notify(
+        task.assigneeId,
+        "Rapport de Mission Rejeté ⚠️",
+        `Le rapport pour "${task.title}" a été refusé. Raison : ${reason}. Veuillez corriger et soumettre à nouveau.`,
+        'critical'
+      );
+
+      setViewingTask(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err, OperationType.UPDATE, `tasks/${task.id}`);
+    }
+  };
+
   const toggleSubTask = async (taskId: string, subTaskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    const newSubTasks = task.subTasks.map(st => 
+    const newSubTasks = (task.subTasks || []).map(st => 
       st.id === subTaskId ? { ...st, completed: !st.completed } : st
     );
 
     const completedCount = newSubTasks.filter(st => st.completed).length;
     const progress = Math.round((completedCount / newSubTasks.length) * 100);
-    const status = progress === 100 ? 'completed' : progress > 0 ? 'in_progress' : 'pending';
+    const defaultStatus = progress === 100 ? 'completed' : progress > 0 ? 'in_progress' : 'pending';
+    const status = (defaultStatus === 'completed' && (profile?.role === 'USER' || profile?.role === 'SUPER_USER')) 
+      ? 'in_progress'
+      : defaultStatus;
 
     try {
       await updateDoc(doc(db, 'tasks', taskId), {
@@ -224,14 +402,16 @@ export default function Tasks() {
     }));
   };
 
-  const sortedTasks = tasks.sort((a, b) => {
+  const sortedTasks = tasks
+    .filter(t => categoryFilter === 'all' ? true : t.category === categoryFilter)
+    .sort((a, b) => {
     if (sortBy === 'deadline') {
       const dateA = a.deadline || 0;
       const dateB = b.deadline || 0;
       return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
     }
     if (sortBy === 'status') {
-      const statusOrder = { 'pending': 1, 'in_progress': 2, 'completed': 3 };
+      const statusOrder = { 'pending': 1, 'in_progress': 2, 'pending_validation': 3, 'completed': 4 };
       const valA = statusOrder[a.status as keyof typeof statusOrder] || 0;
       const valB = statusOrder[b.status as keyof typeof statusOrder] || 0;
       return sortOrder === 'asc' ? valA - valB : valB - valA;
@@ -278,6 +458,21 @@ export default function Tasks() {
               Statut {sortBy === 'status' && (sortOrder === 'asc' ? '↑' : '↓')}
             </button>
           </div>
+
+          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-1.5 rounded-2xl shadow-sm">
+            <Filter size={14} className="ml-2 text-slate-400" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-transparent border-none text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white focus:ring-0 pr-8 cursor-pointer appearance-none"
+            >
+              <option value="all">Toutes Catégories</option>
+              {TASK_CATEGORIES.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+
           {(profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN') && (
             <button 
               onClick={() => setIsModalOpen(true)}
@@ -402,23 +597,35 @@ export default function Tasks() {
                 >
                   <div className="flex justify-between items-start mb-4">
                      <button 
+                      disabled={task.status === 'pending_validation'}
                       onClick={(e) => { e.stopPropagation(); toggleTaskStatus(task); }}
                       className={`p-1.5 rounded-lg transition-colors ${
-                        task.status === 'completed' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-300 dark:text-slate-700 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                        task.status === 'completed' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 
+                        task.status === 'pending_validation' ? 'text-amber-500 bg-amber-50 dark:bg-amber-550/10 cursor-not-allowed' :
+                        'text-slate-300 dark:text-slate-700 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
                       }`}
                      >
-                       {task.status === 'completed' ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                       {task.status === 'completed' ? <CheckCircle2 size={24} /> : 
+                        task.status === 'pending_validation' ? <Clock size={24} className="animate-pulse" /> : 
+                        <Circle size={24} />}
                      </button>
                    <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
                      task.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 
+                     task.status === 'pending_validation' ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400' :
                      task.status === 'in_progress' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400' : 
                      'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                    }`}>
                      {task.status === 'completed' ? <CheckCircle2 size={12} /> : 
                       task.status === 'in_progress' ? <Activity size={12} /> : 
                       <Clock size={12} />}
-                     {task.status}
+                     {task.status === 'pending_validation' ? 'En Validation' : task.status}
                    </span>
+                </div>
+
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                    {task.category || 'Autre'}
+                  </span>
                 </div>
 
                 <h3 className={`font-bold text-lg mb-2 ${task.status === 'completed' ? 'text-slate-400 dark:text-slate-600 line-through' : 'text-slate-900 dark:text-white'} tracking-tight`}>{task.title}</h3>
@@ -488,7 +695,12 @@ export default function Tasks() {
                   </div>
                </div>
 
-               <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4 uppercase tracking-tight leading-tight">{viewingTask.title}</h2>
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-1 rounded-full">
+                      {viewingTask.category || 'Autre'}
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4 uppercase tracking-tight leading-tight">{viewingTask.title}</h2>
                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-6 mb-8">
                   <p className="text-sm text-slate-600 dark:text-slate-400 font-medium leading-relaxed whitespace-pre-wrap mb-4">{viewingTask.description || "Aucune instruction supplémentaire fournie."}</p>
                   
@@ -536,22 +748,58 @@ export default function Tasks() {
                   </div>
                </div>
 
-               <div className="flex gap-4 mb-4">
-                  <button 
-                    onClick={() => { toggleTaskStatus(viewingTask); setViewingTask(null); }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all shadow-xl ${
-                      viewingTask.status === 'completed' 
-                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 shadow-slate-200 dark:shadow-none' 
-                        : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200 dark:shadow-none'
-                    }`}
-                  >
-                    {viewingTask.status === 'completed' ? (
-                      <><AlertTriangle size={18} /> Marquer comme incomplète</>
-                    ) : (
-                      <><CheckCircle2 size={18} /> Terminer la mission</>
-                    )}
-                  </button>
-               </div>
+               {viewingTask.completionReportText && (
+                  <div className="p-4 bg-amber-50/50 dark:bg-amber-500/5 border border-amber-100/50 dark:border-amber-950/20 rounded-2xl mb-4">
+                     <p className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                        <MessageSquare size={12} /> Rapport de fin de mission
+                     </p>
+                     <p className="text-sm font-medium text-slate-800 dark:text-slate-300 leading-relaxed italic">
+                        "{viewingTask.completionReportText}"
+                     </p>
+                  </div>
+               )}
+
+               {viewingTask.status === 'pending_validation' && (profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN') ? (
+                 <div className="flex gap-4 mb-4 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/60">
+                    <button 
+                      onClick={() => handleValidateTask(viewingTask)}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all font-sans text-xs uppercase"
+                    >
+                       <CheckCircle2 size={16} /> Valider
+                    </button>
+                    <button 
+                      onClick={() => setRejectingTask(viewingTask)}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all font-sans text-xs uppercase"
+                    >
+                       <X size={16} /> Rejeter
+                    </button>
+                 </div>
+               ) : (
+                  viewingTask.status === 'pending_validation' ? (
+                    <div className="p-4 bg-amber-50/50 dark:bg-amber-500/5 border border-amber-100/50 dark:border-amber-950/20 rounded-2xl text-center mb-4">
+                      <p className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center justify-center gap-2">
+                        <Clock size={16} className="animate-spin" /> Validation en cours par le management
+                      </p>
+                    </div>
+                  ) : (
+                     <div className="flex gap-4 mb-4">
+                        <button 
+                          onClick={() => { toggleTaskStatus(viewingTask); setViewingTask(null); }}
+                          className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all shadow-xl ${
+                            viewingTask.status === 'completed' 
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 shadow-slate-200 dark:shadow-none' 
+                              : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200 dark:shadow-none'
+                          }`}
+                        >
+                          {viewingTask.status === 'completed' ? (
+                            <><AlertTriangle size={18} /> Marquer comme incomplète</>
+                          ) : (
+                            <><CheckCircle2 size={18} /> Terminer la mission</>
+                          )}
+                        </button>
+                     </div>
+                  )
+               )}
 
                <div className="max-h-64 overflow-y-auto pr-2 scrollbar-hide">
                  <CommentsSection parentId={viewingTask.id} parentType="tasks" />
@@ -575,21 +823,27 @@ export default function Tasks() {
                    <textarea rows={3} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Détails de la mission..." className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"/>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
-                   <div>
+                   <div className="col-span-2 sm:col-span-1">
+                     <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Catégorie</label>
+                     <select required value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white">
+                       {TASK_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                     </select>
+                   </div>
+                   <div className="col-span-2 sm:col-span-1">
                      <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Assigné à</label>
                      <select required value={formData.assigneeId} onChange={(e) => setFormData({...formData, assigneeId: e.target.value})} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white">
                        <option value="">Sélectionner</option>
                        {employees.filter(e => e.role === 'USER').map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                      </select>
                    </div>
-                   <div>
-                     <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Priorité</label>
-                     <select required value={formData.priority} onChange={(e) => setFormData({...formData, priority: e.target.value as any})} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white">
-                       <option value="low">Faible</option>
-                       <option value="medium">Moyenne</option>
-                       <option value="high">Haute / Urgente</option>
-                     </select>
-                   </div>
+                 </div>
+                 <div>
+                   <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Priorité</label>
+                   <select required value={formData.priority} onChange={(e) => setFormData({...formData, priority: e.target.value as any})} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white">
+                     <option value="low">Faible</option>
+                     <option value="medium">Moyenne</option>
+                     <option value="high">Haute / Urgente</option>
+                   </select>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                    <div className="col-span-2">
@@ -650,6 +904,118 @@ export default function Tasks() {
                  </div>
                </form>
             </motion.div>
+          </div>
+         )}
+
+        {submittingReportTask && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSubmittingReportTask(null)} className="absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm" />
+             <motion.div
+               initial={{ opacity: 0, scale: 0.95 }}
+               animate={{ opacity: 1, scale: 1 }}
+               exit={{ opacity: 0, scale: 0.95 }}
+               className="relative bg-white dark:bg-slate-950 w-full max-w-lg rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-2xl overflow-hidden z-10"
+             >
+               <button 
+                 onClick={() => setSubmittingReportTask(null)}
+                 className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-full transition-colors"
+               >
+                  <X size={18} />
+               </button>
+               <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+                  <MessageSquare className="text-amber-500" /> Soumettre le rapport final
+               </h3>
+               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 font-medium">
+                  Veuillez rédiger un court rapport sur les résultats de l'exécution de la mission "{submittingReportTask.title}".
+               </p>
+               <form onSubmit={handleSubmissionReport} className="space-y-6">
+                  <div>
+                     <label className="block text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Notes de fin de mission</label>
+                     <textarea
+                       required
+                       value={reportText}
+                       onChange={(e) => setReportText(e.target.value)}
+                       placeholder="Rapporter l'état d'avancement, les incidents éventuels, ou les détails de la réalisation technique..."
+                       rows={4}
+                       className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-850 hover:border-slate-200 dark:hover:border-slate-700 focus:border-brand dark:focus:border-brand rounded-2xl text-slate-900 dark:text-white text-sm font-medium transition-all focus:ring-1 focus:ring-brand outline-none"
+                     />
+                  </div>
+                  <div className="flex gap-3 justify-end">
+                     <button
+                       type="button"
+                       onClick={() => setSubmittingReportTask(null)}
+                       className="px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+                     >
+                        Annuler
+                     </button>
+                     <button
+                       type="submit"
+                       className="px-5 py-3 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-250/50"
+                     >
+                        Saisir & Soumettre
+                     </button>
+                  </div>
+               </form>
+             </motion.div>
+          </div>
+        )}
+
+        {rejectingTask && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setRejectingTask(null); setRejectionReason(''); }} className="absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm" />
+             <motion.div
+               initial={{ opacity: 0, scale: 0.95 }}
+               animate={{ opacity: 1, scale: 1 }}
+               exit={{ opacity: 0, scale: 0.95 }}
+               className="relative bg-white dark:bg-slate-950 w-full max-w-lg rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-2xl overflow-hidden z-10"
+             >
+               <button 
+                 onClick={() => { setRejectingTask(null); setRejectionReason(''); }}
+                 className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-full transition-colors"
+               >
+                  <X size={18} />
+               </button>
+               <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+                  <AlertTriangle className="text-red-500" /> Motif de rejet du rapport
+               </h3>
+               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 font-medium">
+                  Spécifiez la raison pour laquelle vous refusez la validation de la tâche "{rejectingTask.title}".
+               </p>
+               <div className="space-y-6">
+                  <div>
+                     <label className="block text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Explications pour le collaborateur concerné</label>
+                     <textarea
+                       required
+                       value={rejectionReason}
+                       onChange={(e) => setRejectionReason(e.target.value)}
+                       placeholder="Ex: Le travail d'adressage n'a pas été fini sur le secteur Nord..."
+                       rows={3}
+                       className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-850 hover:border-slate-200 dark:hover:border-slate-700 focus:border-brand dark:focus:border-brand rounded-2xl text-slate-900 dark:text-white text-sm font-medium transition-all focus:ring-1 focus:ring-brand outline-none"
+                     />
+                  </div>
+                  <div className="flex gap-3 justify-end">
+                     <button
+                       type="button"
+                       onClick={() => { setRejectingTask(null); setRejectionReason(''); }}
+                       className="px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+                     >
+                        Annuler
+                     </button>
+                     <button
+                       type="button"
+                       disabled={!rejectionReason.trim()}
+                       onClick={() => {
+                         handleRejectTask(rejectingTask, rejectionReason);
+                         setRejectingTask(null);
+                         setRejectionReason('');
+                       }}
+                       className="px-5 py-3 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold transition-colors"
+                     >
+                        Confirmer le rejet
+                     </button>
+                  </div>
+               </div>
+             </motion.div>
           </div>
         )}
       </AnimatePresence>

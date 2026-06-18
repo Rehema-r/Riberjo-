@@ -12,8 +12,7 @@ import {
   Plus,
   Calendar,
   AlertTriangle,
-  History,
-  Activity
+  History
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 

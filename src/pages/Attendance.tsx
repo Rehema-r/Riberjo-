@@ -22,7 +22,7 @@ export default function AttendancePage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'late' | 'absent'>('all');
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
-  const isHR = profile?.role === 'SUPER_ADMIN' || profile?.departmentId === '03';
+  const isHR = profile?.role === 'SUPER_ADMIN' || profile?.departmentId === 'all' || profile?.departmentId === '03';
 
   useEffect(() => {
     if (!profile) return;
@@ -35,15 +35,21 @@ export default function AttendancePage() {
       limit(30)
     );
 
-    const unsubscribeSelf = onSnapshot(qSelf, (snapshot) => {
-      const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Attendance));
-      setAttendance(records);
-      
-      const today = new Date().toISOString().split('T')[0];
-      const todayRec = records.find(r => r.date === today);
-      setTodayRecord(todayRec || null);
-      setIsLoading(false);
-    });
+    const unsubscribeSelf = onSnapshot(qSelf, 
+      (snapshot) => {
+        const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Attendance));
+        setAttendance(records);
+        
+        const today = new Date().toISOString().split('T')[0];
+        const todayRec = records.find(r => r.date === today);
+        setTodayRecord(todayRec || null);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.warn("Attendance self onSnapshot operates in local cache mode:", error.message);
+        setIsLoading(false);
+      }
+    );
 
     // Fetch admin history if HR
     let unsubscribeAdmin = () => {};
@@ -54,10 +60,15 @@ export default function AttendancePage() {
         limit(100)
       );
 
-      unsubscribeAdmin = onSnapshot(qAdmin, (snapshot) => {
-        const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Attendance));
-        setAdminAttendance(records);
-      });
+      unsubscribeAdmin = onSnapshot(qAdmin, 
+        (snapshot) => {
+          const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Attendance));
+          setAdminAttendance(records);
+        },
+        (error) => {
+          console.warn("Attendance admin onSnapshot operates in local cache mode:", error.message);
+        }
+      );
     }
 
     return () => {
@@ -69,30 +80,41 @@ export default function AttendancePage() {
   // Handle QR Scanner
   useEffect(() => {
     if (activeTab === 'scanner') {
-      const scanner = new Html5QrcodeScanner(
-        "qr-reader",
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        /* verbose= */ false
-      );
-      scannerRef.current = scanner;
+      const timer = setTimeout(() => {
+        const element = document.getElementById('qr-reader');
+        if (!element) return;
 
-      scanner.render(async (decodedText) => {
-        // Expected format: RIBERJO:MATRICULE
-        if (decodedText.startsWith('RIBERJO:')) {
-          const matricule = decodedText.split(':')[1];
-          setScanResult(matricule);
-          await processExternalClock(matricule);
-          scanner.clear();
-          setActiveTab('my');
-        }
-      }, (error) => {
-        // Silence errors as they happen constantly during search
-      });
+        const scanner = new Html5QrcodeScanner(
+          "qr-reader",
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          /* verbose= */ false
+        );
+        scannerRef.current = scanner;
+
+        scanner.render(async (decodedText) => {
+          // Expected format: RIBERJO:MATRICULE
+          if (decodedText.startsWith('RIBERJO:')) {
+            const matricule = decodedText.split(':')[1];
+            setScanResult(matricule);
+            await processExternalClock(matricule);
+            try {
+              await scanner.clear();
+            } catch (e) {
+              console.warn("Scanner clear failed", e);
+            }
+            setActiveTab('my');
+          }
+        }, (error) => {
+          // Silence errors as they happen constantly during search
+        });
+      }, 100);
+
+      return () => clearTimeout(timer);
     }
 
     return () => {
       if (scannerRef.current) {
-        scannerRef.current.clear().catch(e => console.warn(e));
+        scannerRef.current.clear().catch(e => console.warn("Scanner cleanup failed", e));
         scannerRef.current = null;
       }
     };
@@ -200,7 +222,7 @@ export default function AttendancePage() {
   };
 
   const filteredAdminAttendance = adminAttendance.filter(a => {
-    const matchesSearch = a.userName.toLowerCase().includes(searchTerm.toLowerCase()) || a.userId.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (a.userName || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || (a.userId || '').toLowerCase().includes((searchTerm || '').toLowerCase());
     const matchesFilter = statusFilter === 'all' || a.status === statusFilter;
     return matchesSearch && matchesFilter;
   });

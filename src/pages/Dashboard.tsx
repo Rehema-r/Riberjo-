@@ -34,8 +34,13 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  ResponsiveContainer
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
+  Legend
 } from 'recharts';
+import { DEPARTMENTS, SERVICES_LIST } from '../constants';
 
 export default function Dashboard() {
   const { profile } = useAuth();
@@ -54,6 +59,8 @@ export default function Dashboard() {
   const [deptEmployees, setDeptEmployees] = useState<UserProfile[]>([]);
   const [newsFeed, setNewsFeed] = useState<any[]>([]);
   const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [serviceAnalytics, setServiceAnalytics] = useState<any[]>([]);
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,6 +74,14 @@ export default function Dashboard() {
     
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (profile?.role === 'ADMIN' && profile?.departmentId) {
+      setSelectedDeptId(profile.departmentId);
+    } else {
+      setSelectedDeptId('all');
+    }
+  }, [profile]);
 
   const [trendData, setTrendData] = useState<{name: string, val: number}[]>([]);
   const [attendanceTrend, setAttendanceTrend] = useState<{name: string, rate: number}[]>([]);
@@ -128,10 +143,20 @@ export default function Dashboard() {
 
         } else if (profile.role === 'ADMIN') {
           // Director View: Department stats
+          const deptUsersQuery = profile.departmentId === 'all' 
+            ? query(collection(db, usersPath)) 
+            : query(collection(db, usersPath), where('departmentId', '==', profile.departmentId));
+          const deptReportsQuery = profile.departmentId === 'all' 
+            ? query(collection(db, reportsPath)) 
+            : query(collection(db, reportsPath), where('departmentId', '==', profile.departmentId));
+          const deptTasksQuery = profile.departmentId === 'all' 
+            ? query(collection(db, tasksPath)) 
+            : query(collection(db, tasksPath), where('departmentId', '==', profile.departmentId));
+
           const [deptUsersSnap, deptReportsSnap, deptTasksSnap] = await Promise.all([
-            getDocs(query(collection(db, usersPath), where('departmentId', '==', profile.departmentId))),
-            getDocs(query(collection(db, reportsPath), where('departmentId', '==', profile.departmentId))),
-            getDocs(query(collection(db, tasksPath), where('departmentId', '==', profile.departmentId)))
+            getDocs(deptUsersQuery),
+            getDocs(deptReportsQuery),
+            getDocs(deptTasksQuery)
           ]);
 
           const reports = deptReportsSnap.docs.map(d => d.data() as Report);
@@ -221,10 +246,10 @@ export default function Dashboard() {
 
         const attendTrend = last7Days.map(dateStr => {
           const presentCount = allAttendance.filter(a => a.date === dateStr).length;
-          const rate = Math.round((presentCount / totalEmployees) * 100);
+          const rate = totalEmployees > 0 ? Math.round((presentCount / totalEmployees) * 100) : 0;
           return {
             name: new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'short' }),
-            rate
+            rate: isNaN(rate) ? 0 : rate
           };
         });
         setAttendanceTrend(attendTrend);
@@ -236,10 +261,10 @@ export default function Dashboard() {
              return rDate === dateStr;
           }).length;
           // Assume target is totalEmployees for now or some constant
-          const rate = Math.min(100, Math.round((count / (totalEmployees * 0.5)) * 100)); 
+          const rate = totalEmployees > 0 ? Math.min(100, Math.round((count / (totalEmployees * 0.5)) * 100)) : 0; 
           return {
             name: new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'short' }),
-            rate
+            rate: isNaN(rate) ? 0 : rate
           };
         });
         setSubmissionTrend(subTrend);
@@ -268,6 +293,88 @@ export default function Dashboard() {
           };
         });
         setDepartmentsStatus(status);
+
+        // Compute service analytics
+        const allUsers: UserProfile[] = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile));
+        const computedServiceAnalytics = SERVICES_LIST.map(service => {
+          const serviceUsers = allUsers.filter(u => u.departmentId === service.deptId && u.serviceId === service.id);
+          const serviceUserIds = new Set(serviceUsers.map(u => u.id));
+
+          // Filter tasks assigned to users in this service
+          const serviceTasks = allTasks.filter(t => t.assigneeId && serviceUserIds.has(t.assigneeId));
+
+          const totalTasks = serviceTasks.length;
+          const completedTasks = serviceTasks.filter(t => t.status === 'completed').length;
+          const activeTasks = serviceTasks.filter(t => t.status !== 'completed').length;
+          
+          let totalProgress = 0;
+          serviceTasks.forEach(t => {
+            totalProgress += t.progress || 0;
+          });
+          const avgProgress = totalTasks > 0 ? Math.round(totalProgress / totalTasks) : 0;
+          
+          const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+          const productivityScore = totalTasks > 0 ? Math.round((completionRate + avgProgress) / 2) : 0;
+
+          const deptName = DEPARTMENTS.find(d => d.id === service.deptId)?.name || 'Inconnu';
+
+          return {
+            serviceId: service.id,
+            serviceName: service.name,
+            deptId: service.deptId,
+            deptName,
+            totalTasks,
+            completedTasks,
+            activeTasks,
+            avgProgress,
+            productivityScore,
+            usersCount: serviceUsers.length
+          };
+        });
+
+        // Add a "Général" service representation for each department
+        const computedDepts = DEPARTMENTS.map(dept => {
+          const generalUsers = allUsers.filter(u => u.departmentId === dept.id && (!u.serviceId || u.serviceId === 'Général' || u.serviceId === ''));
+          const generalUserIds = new Set(generalUsers.map(u => u.id));
+
+          const generalTasks = allTasks.filter(t => {
+            if (t.departmentId === dept.id) {
+              if (!t.assigneeId) return true;
+              const assignee = allUsers.find(u => u.id === t.assigneeId);
+              return !assignee || !assignee.serviceId || assignee.serviceId === 'Général' || assignee.serviceId === '';
+            }
+            return false;
+          });
+
+          const totalTasks = generalTasks.length;
+          const completedTasks = generalTasks.filter(t => t.status === 'completed').length;
+          const activeTasks = generalTasks.filter(t => t.status !== 'completed').length;
+
+          let totalProgress = 0;
+          generalTasks.forEach(t => {
+            totalProgress += t.progress || 0;
+          });
+          const avgProgress = totalTasks > 0 ? Math.round(totalProgress / totalTasks) : 0;
+          
+          const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+          const productivityScore = totalTasks > 0 ? Math.round((completionRate + avgProgress) / 2) : 0;
+
+          return {
+            serviceId: 'Général',
+            serviceName: 'Général',
+            deptId: dept.id,
+            deptName: dept.name,
+            totalTasks,
+            completedTasks,
+            activeTasks,
+            avgProgress,
+            productivityScore,
+            usersCount: generalUsers.length
+          };
+        });
+
+        const fullAnalytics = [...computedServiceAnalytics, ...computedDepts];
+        setServiceAnalytics(fullAnalytics);
 
         // News Feed logic
         const [notifsSnap, validatedReportsSnap] = await Promise.all([
@@ -457,24 +564,24 @@ export default function Dashboard() {
           )}
         </div>
 
-          <div className="h-64 sm:h-80 w-full lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
-            <div className="flex justify-between items-center mb-8">
+          <div className="min-h-[450px] sm:h-80 w-full lg:col-span-2 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-6 sm:p-8 shadow-sm">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
               <div>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Performance Opérationnelle</h3>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Performance Opérationnelle</h3>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Présences et Rapports (7j)</p>
               </div>
-              <div className="flex gap-4">
+              <div className="flex items-center gap-6 sm:gap-4">
                 <div className="flex items-center gap-2">
                    <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                   <span className="text-[8px] font-black uppercase text-slate-400">Présences</span>
+                   <span className="text-[10px] font-black uppercase text-slate-400">Présences</span>
                 </div>
                 <div className="flex items-center gap-2">
                    <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
-                   <span className="text-[8px] font-black uppercase text-slate-400">Rapports</span>
+                   <span className="text-[10px] font-black uppercase text-slate-400">Rapports</span>
                 </div>
               </div>
             </div>
-            <div className="h-64 w-full">
+            <div className="h-[280px] sm:h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={attendanceTrend.map((a, i) => ({
                     name: a.name,
@@ -504,6 +611,256 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           </div>
+      </div>
+
+      {/* SECTION DU TABLEAU DE BORD DE LA PRODUCTIVITÉ PAR SERVICE */}
+      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm mb-8">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
+          <div>
+            <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">
+              Analyse de la Productivité par Service
+            </h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
+              Répartition des tâches et performance opérationnelle par unité
+            </p>
+          </div>
+
+          {/* Filtre de Département */}
+          <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-3">
+              Département :
+            </span>
+            <select
+              value={selectedDeptId}
+              onChange={(e) => setSelectedDeptId(e.target.value)}
+              disabled={profile?.role === 'ADMIN'}
+              className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-slate-200 py-2 px-4 rounded-xl border border-slate-200/50 dark:border-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand/20 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {profile?.role !== 'ADMIN' && (
+                <option value="all">Tous les Départements</option>
+              )}
+              {DEPARTMENTS.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {(() => {
+          // Filtered services based on selection
+          const filteredServices = serviceAnalytics.filter(
+            (s) => selectedDeptId === 'all' || s.deptId === selectedDeptId
+          );
+
+          // Get stats for highlights
+          const servicesWithTasks = filteredServices.filter((s) => s.totalTasks > 0);
+          const topService = servicesWithTasks.reduce(
+            (max, s) => (s.productivityScore > max.productivityScore ? s : max),
+            { serviceName: 'Aucun', productivityScore: 0, deptName: 'N/A' } as any
+          );
+          const totalActiveTasks = filteredServices.reduce((sum, s) => sum + s.activeTasks, 0);
+          const totalCompletedTasks = filteredServices.reduce((sum, s) => sum + s.completedTasks, 0);
+          const totalTasksInScope = filteredServices.reduce((sum, s) => sum + s.totalTasks, 0);
+          const overallProgress = totalTasksInScope > 0
+            ? Math.round(filteredServices.reduce((sum, s) => sum + (s.avgProgress * s.totalTasks), 0) / totalTasksInScope)
+            : 0;
+
+          return (
+            <>
+              {/* Highlight Cards Row */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-500/5 dark:to-purple-500/5 p-6 rounded-3xl border border-indigo-100/50 dark:border-indigo-500/10">
+                  <p className="text-[10px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest mb-1">
+                    Service le plus Performant
+                  </p>
+                  <h4 className="text-lg font-black text-indigo-950 dark:text-indigo-200 truncate uppercase tracking-tight">
+                    {topService.serviceName}
+                  </h4>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                      {topService.productivityScore}%
+                    </span>
+                    <span className="text-[9px] font-black bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                      {topService.deptName}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-500/5 dark:to-teal-500/5 p-6 rounded-3xl border border-emerald-100/50 dark:border-emerald-500/10">
+                  <p className="text-[10px] font-black text-emerald-500 dark:text-emerald-400 uppercase tracking-widest mb-1">
+                    Avancement Moyen des Tâches
+                  </p>
+                  <h4 className="text-lg font-black text-emerald-950 dark:text-emerald-200 uppercase tracking-tight">
+                    Productivité Globale
+                  </h4>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                      {overallProgress}%
+                    </span>
+                    <span className="text-[9px] font-black bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                      {totalCompletedTasks} Terminées / {totalTasksInScope} Totales
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-500/5 dark:to-orange-500/5 p-6 rounded-3xl border border-amber-100/50 dark:border-amber-500/10">
+                  <p className="text-[10px] font-black text-amber-500 dark:text-amber-400 uppercase tracking-widest mb-1">
+                    Flux Global Actif
+                  </p>
+                  <h4 className="text-lg font-black text-amber-950 dark:text-amber-200 uppercase tracking-tight">
+                    Tâches en Cours d'Exécution
+                  </h4>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
+                      {totalActiveTasks}
+                    </span>
+                    <span className="text-[9px] font-black bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                      Réparties sur {filteredServices.length} Services
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chart and Details row */}
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                {/* Productivity Chart */}
+                <div className="lg:col-span-3 bg-slate-50 dark:bg-slate-800/20 rounded-3xl border border-slate-100 dark:border-slate-800/80 p-6 flex flex-col h-[380px]">
+                  <div className="mb-4">
+                    <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                      Productivité des Services (%) vs Volume de Tâches
+                    </h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5 font-sans">
+                      Analyse visuelle croisée
+                    </p>
+                  </div>
+                  <div className="flex-1 min-h-0 w-full">
+                    {servicesWithTasks.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-450 dark:text-slate-500 italic text-sm text-center">
+                        Aucune tâche enregistrée dans ce filtre pour effectuer l'analyse graphique.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={servicesWithTasks.map((s) => ({
+                            name: s.serviceName.length > 20 ? `${s.serviceName.slice(0, 18)}...` : s.serviceName,
+                            'Volume Tâches': s.totalTasks,
+                            'Score Productivité': s.productivityScore,
+                          }))}
+                          margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? "#1e293b" : "#F1F5F9"} />
+                          <XAxis
+                            dataKey="name"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: isDarkMode ? '#64748b' : '#94A3B8', fontSize: 8, fontWeight: 700 }}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: isDarkMode ? '#64748b' : '#94A3B8', fontSize: 8, fontWeight: 700 }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: isDarkMode ? '#0f172a' : '#fff',
+                              borderRadius: '16px',
+                              border: 'none',
+                              boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                            }}
+                            labelStyle={{ fontSize: '10px', color: '#94A3B8', textTransform: 'uppercase', fontWeight: 900 }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
+                          <Bar dataKey="Score Productivité" fill="#6366F1" radius={[4, 4, 0, 0]} name="Productivité %" />
+                          <Bar dataKey="Volume Tâches" fill="#10B981" radius={[4, 4, 0, 0]} name="Volume Tâches" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
+                {/* Services List Breakdown */}
+                <div className="lg:col-span-2 flex flex-col justify-between">
+                  <div className="bg-slate-50 dark:bg-slate-800/20 rounded-3xl border border-slate-100 dark:border-slate-800/80 p-6 h-[380px] flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                          Détails des Unités
+                        </h4>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">
+                          Taux de réussite et effectifs
+                        </p>
+                      </div>
+                      <span className="text-[9px] font-black text-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-1 rounded-lg uppercase tracking-widest">
+                        {filteredServices.length} Services
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                      {filteredServices.map((service, idx) => {
+                        let badgeColor = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-455';
+                        let badgeText = 'En attente';
+
+                        if (service.totalTasks > 0) {
+                          if (service.productivityScore > 75) {
+                            badgeColor = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400';
+                            badgeText = 'Haute Perf';
+                          } else if (service.productivityScore > 40) {
+                            badgeColor = 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400';
+                            badgeText = 'En Progrès';
+                          } else {
+                            badgeColor = 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400';
+                            badgeText = 'Attention';
+                          }
+                        }
+
+                        return (
+                          <div
+                            key={`${service.deptId}_${service.serviceId}_${idx}`}
+                            className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/40 rounded-xl p-3 shadow-none hover:shadow-sm"
+                          >
+                            <div className="flex justify-between items-start gap-4 mb-2">
+                              <div>
+                                <h5 className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight leading-snug">
+                                  {service.serviceName}
+                                </h5>
+                                <p className="text-[8px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                  {service.deptName} • {service.usersCount} collaborateur{service.usersCount !== 1 ? 's' : ''}
+                                </p>
+                              </div>
+                              <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shrink-0 ${badgeColor}`}>
+                                {badgeText}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-indigo-600 dark:bg-indigo-500 h-full rounded-full"
+                                  style={{ width: `${service.productivityScore}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 font-mono">
+                                {service.productivityScore}%
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-50 dark:border-slate-800/50 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span>Tâches: <strong>{service.totalTasks}</strong></span>
+                              <span>Finies: <strong className="text-emerald-600 dark:text-emerald-400">{service.completedTasks}</strong></span>
+                              <span>En cours: <strong className="text-amber-600 dark:text-amber-400">{service.activeTasks}</strong></span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">

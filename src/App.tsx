@@ -24,6 +24,8 @@ import ClientRegister from './pages/client/Register';
 import ClientAgriculture from './pages/client/Agriculture';
 import ClientHealth from './pages/client/Health';
 import ClientEducation from './pages/client/Education';
+import Verify from './pages/Verify';
+import Notifications from './pages/Notifications';
 import PasswordChangeModal from './components/PasswordChangeModal';
 import { AnimatePresence, motion } from 'motion/react';
 import { notificationService } from './services/notificationService';
@@ -31,69 +33,86 @@ import { notificationService } from './services/notificationService';
 export default function App() {
   const { user, profile, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [isInitializing, setIsInitializing] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  const [redirectedMatricule, setRedirectedMatricule] = useState<string | null>(null);
   const [isPublicRegister, setIsPublicRegister] = useState(window.location.pathname === '/register-client');
+  const [verifyId, setVerifyId] = useState<string | null>(
+    window.location.pathname.startsWith('/verify/') ? window.location.pathname.split('/verify/')[1] : null
+  );
 
   useEffect(() => {
-    // Handle manual URL navigation for public register
-    const handlePopState = () => setIsPublicRegister(window.location.pathname === '/register-client');
+    // Reset redirect and clear page to 'dashboard' if profile is logged out or not yet loaded
+    if (!profile) {
+      setRedirectedMatricule(null);
+      setCurrentPage('dashboard');
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    // Handle manual URL navigation for public register and verify
+    const handlePopState = () => {
+      setIsPublicRegister(window.location.pathname === '/register-client');
+      setVerifyId(window.location.pathname.startsWith('/verify/') ? window.location.pathname.split('/verify/')[1] : null);
+    };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {
-    if (profile?.role === 'CLIENT' && currentPage === 'dashboard') {
-      setCurrentPage('client-dashboard');
+    if (profile && redirectedMatricule !== profile.matricule) {
+      if (profile.role === 'CLIENT' && currentPage === 'dashboard') {
+        setCurrentPage('client-dashboard');
+        setRedirectedMatricule(profile.matricule);
+      } else if (profile.role !== 'SUPER_ADMIN' && currentPage === 'dashboard') {
+        const getDeptPage = (deptId: string): string | null => {
+          if (!deptId) return null;
+          const clean = deptId.trim().toLowerCase();
+          if (clean === '03' || clean === 'rh' || clean === 'rhu' || clean.includes('ressources') || clean.includes('personnel') || clean.includes('human')) {
+            return 'rh';
+          }
+          if (clean === '01' || clean.includes('ferme') || clean.includes('agri')) {
+            return 'ferme';
+          }
+          if (clean === '02' || clean.includes('santé') || clean.includes('sante') || clean.includes('médic') || clean.includes('medic')) {
+            return 'santé';
+          }
+          if (clean === '04' || clean.includes('finance') || clean.includes('compta')) {
+            return 'finance';
+          }
+          if (clean === '05' || clean.includes('logis') || clean.includes('stock') || clean.includes('appro')) {
+            return 'logistique';
+          }
+          if (clean === '06' || clean.includes('market') || clean.includes('ventes') || clean.includes('commerce') || clean.includes('marché') || clean.includes('marche')) {
+            return 'marketing';
+          }
+          return null;
+        };
+
+        const targetPage = getDeptPage(profile.departmentId || '');
+        if (targetPage) {
+          setCurrentPage(targetPage);
+          setRedirectedMatricule(profile.matricule);
+        } else if (profile.departmentId === undefined || profile.departmentId === '') {
+          // Wait for departmentId to be normalized or fetched
+          console.log("departmentId is empty or loading, waiting to redirect...");
+        } else {
+          // departmentId is not matched, don't block
+          setRedirectedMatricule(profile.matricule);
+        }
+      } else {
+        setRedirectedMatricule(profile.matricule);
+      }
     }
-  }, [profile, currentPage]);
+  }, [profile, currentPage, redirectedMatricule]);
 
   useEffect(() => {
-    // Hide splash screen after 2.5 seconds
+    // Hide splash screen after 1 second
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 2500);
+    }, 1000);
     notificationService.requestPermission();
     return () => clearTimeout(timer);
   }, []);
-
-  // Initialize Super Admin if its the specific matricule and no profile exists
-  useEffect(() => {
-    async function initSuperAdmin() {
-      // Use matricule from local storage instead of firebase user UID
-      const currentMatricule = localStorage.getItem('riberjo_matricule');
-      
-      if (currentMatricule && !profile && !loading && !isInitializing) {
-        setIsInitializing(true);
-        const targetMatricule = "26/RBJ-DG-01";
-        const sanitizedTarget = targetMatricule.replace(/\//g, '_');
-        
-        if (currentMatricule === targetMatricule) {
-          try {
-            const profileRef = doc(db, 'users', sanitizedTarget);
-            const snap = await getDoc(profileRef);
-            
-            if (!snap.exists()) {
-              const newProfile = {
-                fullName: "DG Musama Kasongo",
-                role: 'SUPER_ADMIN',
-                departmentId: 'DG',
-                matricule: targetMatricule,
-                password: 'Riberjo202!',
-                status: 'active',
-                createdAt: Date.now()
-              };
-              await setDoc(profileRef, newProfile);
-            }
-          } catch (err) {
-            console.error("Bootstrap error:", err);
-          }
-        }
-        setIsInitializing(false);
-      }
-    }
-    initSuperAdmin();
-  }, [profile, loading, isInitializing]);
 
   if (showSplash) {
     return (
@@ -149,7 +168,7 @@ export default function App() {
     );
   }
 
-  if (loading || isInitializing) {
+  if (loading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-[#F8FAFC]">
         <div className="flex flex-col items-center gap-4">
@@ -164,11 +183,15 @@ export default function App() {
     return <ClientRegister />;
   }
 
+  if (verifyId) {
+    return <Verify id={verifyId} />;
+  }
+
   if (!user) {
     return <Login />;
   }
 
-  if (!profile && !isInitializing) {
+  if (!profile) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-white p-6 text-center font-sans">
         <div className="w-20 h-20 bg-red-50 text-red-600 rounded-3xl flex items-center justify-center mb-8">
@@ -194,12 +217,14 @@ export default function App() {
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard': return <Dashboard />;
+      case 'profile': return <Settings initialTab="profile" />;
       case 'users': return <Users />;
       case 'departments': return <Departments />;
       case 'reports': return <Reports />;
       case 'tasks': return <Tasks />;
       case 'chat': return <Chat />;
-      case 'settings': return <Settings />;
+      case 'notifications': return <Notifications />;
+      case 'settings': return <Settings initialTab="system" />;
       case 'resources': return <Resources />;
       case 'archive': return <Archive />;
       case 'attendance': return <Attendance />;
@@ -214,6 +239,7 @@ export default function App() {
       case 'marketing': return <DepartmentHub departmentId="06" />;
       // Client Pages
       case 'client-dashboard': return <ClientDashboard />;
+      case 'client-profile': return <Settings initialTab="profile" />;
       case 'client-agriculture': return <ClientAgriculture />;
       case 'client-health': return <ClientHealth />;
       case 'client-education': return <ClientEducation />;
@@ -228,7 +254,29 @@ export default function App() {
 
   if (profile?.role === 'CLIENT') {
     return (
-      <ClientLayout activePage={currentPage} onPageChange={setCurrentPage}>
+      <>
+        <ClientLayout activePage={currentPage} onPageChange={setCurrentPage}>
+          <PasswordChangeModal />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentPage}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+              className="h-full"
+            >
+              {renderPage()}
+            </motion.div>
+          </AnimatePresence>
+        </ClientLayout>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Layout activePage={currentPage} onPageChange={setCurrentPage}>
         <PasswordChangeModal />
         <AnimatePresence mode="wait">
           <motion.div
@@ -242,25 +290,7 @@ export default function App() {
             {renderPage()}
           </motion.div>
         </AnimatePresence>
-      </ClientLayout>
-    );
-  }
-
-  return (
-    <Layout activePage={currentPage} onPageChange={setCurrentPage}>
-      <PasswordChangeModal />
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentPage}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.3 }}
-          className="h-full"
-        >
-          {renderPage()}
-        </motion.div>
-      </AnimatePresence>
-    </Layout>
+      </Layout>
+    </>
   );
 }

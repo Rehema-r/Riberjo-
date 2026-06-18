@@ -1,18 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect, useRef } from 'react';
+import { db, getDocSafe } from '../lib/firebase';
+import { doc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
 import { NotificationPrefs, AppSettings, RolePermission, UserProfile } from '../types';
 import { notificationService } from '../services/notificationService';
-import { Save, Settings as SettingsIcon, Palette, Building, UserCheck, CheckCircle2, ShieldCheck, Check, X, User, Phone, MapPin, Camera, Bell, Trash2, ShieldAlert, QrCode } from 'lucide-react';
+import { Save, Settings as SettingsIcon, Palette, Building, UserCheck, CheckCircle2, ShieldCheck, Check, X, User, Phone, MapPin, Camera, Bell, Trash2, ShieldAlert, QrCode, CreditCard as CardIcon, Download, Printer, LayoutGrid, CheckCircle, RefreshCw, Image as ImageIcon, Upload, Scissors } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { deleteDoc } from 'firebase/firestore';
 import { QRCodeCanvas } from 'qrcode.react';
+import { jsPDF } from "jspdf";
+import * as htmlToImage from 'html-to-image';
+import ImageCropper from '../components/ImageCropper';
+import { DEPARTMENTS, SERVICES_LIST } from '../constants';
 
 const DEFAULT_ROLES: RolePermission[] = [
   {
     role: 'SUPER_ADMIN',
-    label: 'Directeur Général',
+    label: 'DG (Directeur Général)',
     description: 'Accès total au système, gestion financière et stratégique.',
     permissions: { 
       manageUsers: true, manageDept: true, validateReports: true, manageAssets: true, 
@@ -22,7 +26,7 @@ const DEFAULT_ROLES: RolePermission[] = [
   },
   {
     role: 'ADMIN',
-    label: 'Administrateur / Directeur',
+    label: 'Directeur',
     description: 'Gestion des opérations quotidiennes et des rapports de département.',
     permissions: { 
       manageUsers: true, manageDept: true, validateReports: true, manageAssets: true, 
@@ -32,7 +36,7 @@ const DEFAULT_ROLES: RolePermission[] = [
   },
   {
     role: 'SUPER_USER',
-    label: 'Super Utilisateur / Expert',
+    label: 'Expert',
     description: 'Accès avancé pour les experts techniques et chefs de service.',
     permissions: { 
       manageUsers: false, manageDept: false, validateReports: true, manageAssets: true, 
@@ -42,7 +46,7 @@ const DEFAULT_ROLES: RolePermission[] = [
   },
   {
     role: 'USER',
-    label: 'Utilisateur / Employé',
+    label: 'Travailleur',
     description: 'Accès standard pour l\'exécution des tâches et rapports simples.',
     permissions: { 
       manageUsers: false, manageDept: false, validateReports: false, manageAssets: false, 
@@ -52,11 +56,28 @@ const DEFAULT_ROLES: RolePermission[] = [
   }
 ];
 
-export default function Settings() {
-  const { profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'system'>('profile');
+interface SettingsProps {
+  initialTab?: 'profile' | 'notifications' | 'system';
+}
+
+export default function Settings({ initialTab = 'profile' }: SettingsProps) {
+  const { profile, roleLabel } = useAuth();
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const profileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'system'>(
+    initialTab === 'system' && profile?.role !== 'SUPER_ADMIN' ? 'profile' : initialTab
+  );
+
+  useEffect(() => {
+    if (activeTab === 'system' && profile?.role !== 'SUPER_ADMIN') {
+      setActiveTab('profile');
+    }
+  }, [activeTab, profile]);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [cropperType, setCropperType] = useState<'profile' | 'logo' | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
     companyName: 'RIBERJO',
+    logoUrl: 'https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png',
     primaryColor: '#10B981',
     defaultRegistrationRole: 'USER',
     allowSelfRegistration: false,
@@ -117,10 +138,78 @@ export default function Settings() {
   const [editingRole, setEditingRole] = useState<RolePermission | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("L'image est trop volumineuse (max 2 Mo).");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImageToCrop(reader.result as string);
+      setCropperType('logo');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleProfilePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("L'image est trop volumineuse (max 2 Mo).");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImageToCrop(reader.result as string);
+      setCropperType('profile');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const onCropComplete = async (croppedImage: string) => {
+    if (cropperType === 'profile') {
+      setProfileData(prev => ({ ...prev, avatarUrl: croppedImage }));
+      // Auto-save avatar immediately for better UX
+      if (profile) {
+        setIsSaving(true);
+        try {
+          await setDoc(doc(db, 'users', profile.id), {
+            avatarUrl: croppedImage
+          }, { merge: true });
+          setSuccess("Photo de profil mise à jour !");
+          setSaved(true);
+          setTimeout(() => {
+            setSaved(false);
+            setSuccess(null);
+          }, 3000);
+        } catch (err) {
+          console.error(err);
+          setError("Erreur lors de l'enregistrement de l'image.");
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    } else if (cropperType === 'logo') {
+      setSettings(prev => ({ ...prev, logoUrl: croppedImage }));
+    }
+    setImageToCrop(null);
+    setCropperType(null);
+  };
+
   const [saved, setSaved] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    if (profile) {
+    if (profile && !isSaving) {
       setProfileData({
         fullName: profile.fullName || '',
         phone: profile.phone || '',
@@ -132,13 +221,50 @@ export default function Settings() {
       }
     }
     fetchData();
-  }, [profile]);
+  }, [profile, isSaving]);
+
+  const handleDownloadCard = async () => {
+    const card = document.getElementById('service-card-export');
+    if (!card) return;
+    
+    setIsExporting(true);
+    try {
+      const dataUrl = await htmlToImage.toPng(card, { 
+        quality: 1, 
+        pixelRatio: 4,
+        backgroundColor: '#ffffff'
+      });
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = 85.6; 
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      const x = (210 - pdfWidth) / 2;
+      const y = (297 - pdfHeight) / 2;
+      
+      pdf.addImage(dataUrl, 'PNG', x, y, pdfWidth, pdfHeight);
+      pdf.save(`Carte_Service_${profileData.fullName || profile?.fullName}.pdf`);
+      
+      setSuccess("Carte de service exportée avec succès !");
+    } catch (err) {
+      console.error(err);
+      setError("Erreur lors de l'exportation de la carte.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   async function fetchData() {
     setLoading(true);
     try {
       const docRef = doc(db, 'settings', 'global');
-      const snap = await getDoc(docRef);
+      const snap = await getDocSafe(docRef);
       if (snap.exists()) {
         setSettings(snap.data() as AppSettings);
       }
@@ -164,10 +290,10 @@ export default function Settings() {
     setIsSaving(true);
     setSaved(false);
     try {
-      await updateDoc(doc(db, 'settings', 'global'), {
+      await setDoc(doc(db, 'settings', 'global'), {
         ...settings,
         updatedAt: Date.now()
-      });
+      }, { merge: true });
       localStorage.removeItem('settings_form_draft');
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -183,18 +309,24 @@ export default function Settings() {
     if (!profile) return;
     setIsSaving(true);
     setSaved(false);
+    setError(null);
     try {
-      await updateDoc(doc(db, 'users', profile.id), {
+      await setDoc(doc(db, 'users', profile.id), {
         fullName: profileData.fullName,
         phone: profileData.phone,
         address: profileData.address,
         avatarUrl: profileData.avatarUrl
-      });
+      }, { merge: true });
       localStorage.removeItem('profile_form_draft');
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      setSuccess("Profil enregistré avec succès !");
+      setTimeout(() => {
+        setSaved(false);
+        setSuccess(null);
+      }, 3000);
     } catch (err) {
       console.error(err);
+      setError("Erreur lors de l'enregistrement du profil. Réessayez.");
     } finally {
       setIsSaving(false);
     }
@@ -205,9 +337,9 @@ export default function Settings() {
     setIsSaving(true);
     setSaved(false);
     try {
-      await updateDoc(doc(db, 'users', profile.id), {
+      await setDoc(doc(db, 'users', profile.id), {
         notificationPrefs: notificationPrefs
-      });
+      }, { merge: true });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -262,7 +394,7 @@ export default function Settings() {
     }
   };
 
-  const canManageSystem = profile?.role === 'SUPER_ADMIN' || profile?.role === 'ADMIN';
+  const canManageSystem = profile?.role === 'SUPER_ADMIN';
 
   if (loading) {
     return <div className="h-full flex items-center justify-center text-slate-400">Chargement...</div>;
@@ -276,10 +408,10 @@ export default function Settings() {
           <p className="text-slate-500 dark:text-slate-400 font-medium">Gérez votre compte et les préférences du système.</p>
         </div>
         
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl gap-1">
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl gap-1 overflow-x-auto scrollbar-hide no-scrollbar max-w-full">
           <button 
             onClick={() => setActiveTab('profile')}
-            className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+            className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
               activeTab === 'profile' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
           >
@@ -287,7 +419,7 @@ export default function Settings() {
           </button>
           <button 
             onClick={() => setActiveTab('notifications')}
-            className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+            className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
               activeTab === 'notifications' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
             }`}
           >
@@ -296,7 +428,7 @@ export default function Settings() {
           {canManageSystem && (
             <button 
               onClick={() => setActiveTab('system')}
-              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
                 activeTab === 'system' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
             >
@@ -305,6 +437,37 @@ export default function Settings() {
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl flex items-center gap-3 text-red-600 dark:text-red-400"
+          >
+            <ShieldAlert size={20} />
+            <p className="text-sm font-bold">{error}</p>
+            <button onClick={() => setError(null)} className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg">
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+        {success && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mb-6 p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 rounded-2xl flex items-center gap-3 text-emerald-600 dark:text-emerald-400"
+          >
+            <CheckCircle size={20} />
+            <p className="text-sm font-bold">{success}</p>
+            <button onClick={() => setSuccess(null)} className="ml-auto p-1 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 rounded-lg">
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence mode="wait">
         {activeTab === 'profile' ? (
@@ -320,30 +483,45 @@ export default function Settings() {
               <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-sm">
                 <div className="flex items-center gap-8 mb-10">
                   <div className="relative group">
-                    <div className="w-24 h-24 bg-slate-100 dark:bg-slate-800 rounded-[2rem] overflow-hidden border-4 border-white dark:border-slate-700 shadow-lg flex items-center justify-center text-slate-400">
+                    <div className="w-24 h-24 bg-slate-100 dark:bg-slate-800 rounded-[2rem] overflow-hidden border-4 border-white dark:border-slate-700 shadow-lg flex items-center justify-center text-slate-400 group relative">
                       {profileData.avatarUrl ? (
-                        <img src={profileData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                        <img src={profileData.avatarUrl || null} alt="Avatar" className="w-full h-full object-cover" />
                       ) : (
                         <User size={40} />
                       )}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                         <Camera size={24} className="text-white" />
+                      </div>
                     </div>
-                    <label className="absolute -bottom-2 -right-2 p-2 bg-emerald-600 text-white rounded-xl shadow-lg cursor-pointer hover:bg-emerald-700 transition-colors">
-                      <Camera size={16} />
-                      <input 
-                        type="button" 
-                        onClick={() => {
-                          const url = prompt("Lien de votre photo (ou laissez vide pour une photo aléatoire) :");
-                          if (url !== null) {
-                            setProfileData({...profileData, avatarUrl: url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile?.id}`});
-                          }
-                        }}
-                        className="sr-only"
-                      />
-                    </label>
+                    <div className="flex flex-col gap-2 absolute -bottom-2 -right-2">
+                       <label className="p-2 bg-emerald-600 text-white rounded-xl shadow-lg cursor-pointer hover:bg-emerald-700 transition-all hover:scale-110 active:scale-95 translate-x-2" title="Changer la photo">
+                         <Camera size={16} />
+                         <input 
+                           type="file" 
+                           ref={profileInputRef}
+                           accept="image/*"
+                           onChange={handleProfilePhotoUpload}
+                           className="sr-only"
+                         />
+                       </label>
+                       {profileData.avatarUrl && (
+                         <button 
+                           type="button"
+                           onClick={() => {
+                             setImageToCrop(profileData.avatarUrl);
+                             setCropperType('profile');
+                           }}
+                           className="p-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl shadow-lg hover:brightness-110 transition-all hover:scale-110 active:scale-95 translate-x-3"
+                           title="Recadrer ou Pivoter"
+                         >
+                           <Scissors size={16} />
+                         </button>
+                       )}
+                    </div>
                   </div>
                   <div>
                     <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{profileData.fullName || profile?.fullName}</h2>
-                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">{profile?.role}</p>
+                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">{roleLabel}</p>
                     <div className="mt-2 flex items-center gap-2">
                        <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Matricule :</span>
                        <code className="text-xs bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-lg text-slate-600 dark:text-slate-300 font-black">{profile?.matricule}</code>
@@ -431,20 +609,20 @@ export default function Settings() {
 
               <div className="flex flex-col md:flex-row items-center gap-8 bg-slate-50 dark:bg-slate-800/30 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-800">
                 <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100">
-                  <QRCodeCanvas 
-                    value={`RIBERJO:${profile?.matricule || 'N/A'}`}
-                    size={200}
-                    level="H"
-                    includeMargin={true}
-                    imageSettings={{
-                      src: settings.logoUrl || "",
-                      x: undefined,
-                      y: undefined,
-                      height: 40,
-                      width: 40,
-                      excavate: true,
-                    }}
-                  />
+                    <QRCodeCanvas 
+                      value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`}
+                      size={200}
+                      level="H"
+                      includeMargin={true}
+                      imageSettings={settings.logoUrl ? {
+                        src: settings.logoUrl,
+                        x: undefined,
+                        y: undefined,
+                        height: 40,
+                        width: 40,
+                        excavate: true,
+                      } : undefined}
+                    />
                 </div>
                 <div className="flex-1 space-y-4">
                   <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -476,6 +654,256 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+
+            {/* Service Card Section */}
+            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-sm mt-8 no-print">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl">
+                    <CardIcon size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">Carte de Service Universelle</h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Modèle structuré haute définition conforme aux standards.</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                   <button 
+                    onClick={() => window.print()}
+                    className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:text-slate-900 dark:hover:text-white transition-all shadow-sm"
+                    title="Imprimer"
+                   >
+                     <Printer size={18} />
+                   </button>
+                   <button 
+                    onClick={handleDownloadCard}
+                    disabled={isExporting}
+                    className={`p-3 rounded-xl transition-all shadow-sm flex items-center gap-2 ${isExporting ? 'bg-slate-100 text-slate-400' : 'bg-brand text-white hover:brightness-110'}`}
+                    title="Télécharger PDF"
+                   >
+                     {isExporting ? <RefreshCw size={18} className="animate-spin" /> : <Download size={18} />}
+                   </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col lg:flex-row items-center justify-center gap-12 py-12 bg-slate-50 dark:bg-slate-800/30 rounded-[3rem] border border-slate-100 dark:border-slate-800 border-dashed overflow-hidden">
+                {/* Front Side Preview */}
+                <div className="flex flex-col items-center gap-4 scale-75 md:scale-90 lg:scale-100 origin-center -my-20 md:my-0">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Avant</p>
+                  <div className="relative w-[320px] h-[500px] bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col pt-8">
+                    {/* Header Strip */}
+                    <div className="absolute top-0 left-0 w-full h-24 bg-slate-900 flex items-center px-8">
+                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden p-1">
+                        <img src={settings.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
+                      </div>
+                      <div className="ml-4">
+                        <h1 className="text-white font-black text-[10px] uppercase tracking-[0.1em] leading-none">{settings.companyName}</h1>
+                        <p className="text-emerald-400 font-black text-[7px] uppercase tracking-widest mt-1">Identification Officielle</p>
+                      </div>
+                    </div>
+
+                    {/* Photo Area */}
+                    <div className="mt-24 flex flex-col items-center">
+                      <div className="w-36 h-36 bg-slate-50 rounded-[40px] p-1.5 shadow-xl border border-slate-100 relative">
+                        <div className="w-full h-full rounded-[32px] overflow-hidden bg-slate-200">
+                          {profileData.avatarUrl ? (
+                            <img src={profileData.avatarUrl || null} alt="Profile" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-400">
+                              <User size={64} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Personal Info */}
+                    <div className="mt-8 px-8 text-center space-y-1">
+                      <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight leading-tight px-4">{profileData.fullName || profile?.fullName}</h2>
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em]">{roleLabel}</p>
+                    </div>
+
+                    {/* Details Table */}
+                    <div className="mt-8 px-10 space-y-4">
+                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Matricule</span>
+                        <span className="text-[11px] font-mono font-black text-slate-900">{profile?.matricule}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Département</span>
+                        <span className="text-[10px] font-black text-slate-900 truncate max-w-[120px]" title={DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId}>
+                          {DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId} ({profile?.departmentId})
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Service</span>
+                        <span className="text-[10px] font-black text-slate-900 truncate max-w-[120px]">
+                          {(() => {
+                            const matchingService = SERVICES_LIST.find(
+                              (s) =>
+                                s.deptId === profile?.departmentId &&
+                                s.id === profile?.serviceId,
+                            );
+                            if (matchingService) {
+                              return `${matchingService.name} (${matchingService.id})`;
+                            }
+                            return profile?.serviceId ? `Service ${profile?.serviceId}` : "Général";
+                          })()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Validité</span>
+                        <span className="text-[11px] font-black text-slate-900">31 DEC 2026</span>
+                      </div>
+                    </div>
+
+                    {/* Footer QR */}
+                    <div className="mt-auto mb-8 px-10 flex items-center justify-between">
+                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100 shadow-inner">
+                        <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={48} level="M" />
+                      </div>
+                      <div className="text-right">
+                        <div className="h-10 w-24 border-b-2 border-slate-900 mb-1 opacity-20"></div>
+                        <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest leading-none">Signature Direction</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Back Side Preview */}
+                <div className="flex flex-col items-center gap-4 scale-75 md:scale-90 lg:scale-100 origin-center -my-20 md:my-0">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Arrière</p>
+                  <div className="relative w-[320px] h-[500px] bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col p-8 text-white">
+                    <div className="flex justify-center mb-8 opacity-20">
+                      <LayoutGrid size={48} />
+                    </div>
+                    
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-4">Conditions d'Utilisation</h3>
+                    <p className="text-[8px] text-slate-400 leading-relaxed uppercase font-bold tracking-wider space-y-4">
+                      1. Cette carte est strictement personnelle et incessible.<br/><br/>
+                      2. Elle demeure la propriété exclusive de {settings.companyName}.<br/><br/>
+                      3. En cas de perte, le titulaire doit en informer immédiatement la direction.<br/><br/>
+                      4. Elle doit être portée visiblement lors de l'exercice des fonctions.<br/><br/>
+                      5. Toute utilisation frauduleuse expose son auteur à des poursuites.
+                    </p>
+
+                    <div className="mt-auto space-y-6">
+                      <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
+                        <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Contact d'Urgence</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest">+243 812 345 678</p>
+                      </div>
+                      
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-12 h-1 bg-emerald-500 rounded-full"></div>
+                        <p className="text-[7px] font-black text-slate-500 uppercase tracking-[0.3em]">www.riberjo.com</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hidden Export Construction Area (Strictly CR80-like for pdf) */}
+              <div className="fixed -top-[1000px] left-0 pointer-events-none opacity-0">
+                <div id="service-card-export" className="w-[400px] h-[640px] bg-white flex flex-col pt-10 relative">
+                    <div className="absolute top-0 left-0 w-full h-28 bg-slate-900 flex items-center px-10">
+                        <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center overflow-hidden p-1">
+                            <img src={settings.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="ml-5">
+                            <h1 className="text-white font-black text-xs uppercase tracking-widest">{settings.companyName}</h1>
+                            <p className="text-emerald-400 font-black text-[8px] uppercase tracking-widest mt-1">Personnel Autorisé</p>
+                        </div>
+                    </div>
+                    <div className="mt-28 flex flex-col items-center">
+                        <div className="w-40 h-40 bg-white rounded-[45px] p-2 shadow-2xl border border-slate-100 flex items-center justify-center">
+                            <div className="w-full h-full rounded-[38px] overflow-hidden bg-slate-100 flex items-center justify-center">
+                                {profileData.avatarUrl ? (
+                                    <img src={profileData.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                    <User size={80} className="text-slate-300" />
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-10 px-10 text-center">
+                        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{profileData.fullName || profile?.fullName}</h2>
+                        <p className="text-xs font-black text-emerald-600 uppercase tracking-[0.2em] mt-2">{roleLabel}</p>
+                    </div>
+                    <div className="mt-10 px-14 space-y-6">
+                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Matricule</span>
+                            <span className="text-sm font-mono font-black text-slate-900">{profile?.matricule}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Département</span>
+                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
+                              {DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId} ({profile?.departmentId})
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Service</span>
+                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
+                              {(() => {
+                                const matchingService = SERVICES_LIST.find(
+                                  (s) =>
+                                    s.deptId === profile?.departmentId &&
+                                    s.id === profile?.serviceId,
+                                );
+                                if (matchingService) {
+                                  return `${matchingService.name} (${matchingService.id})`;
+                                }
+                                return profile?.serviceId ? `Service ${profile?.serviceId}` : "Général";
+                              })()}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Validité</span>
+                            <span className="text-sm font-black text-slate-900">31/12/2026</span>
+                        </div>
+                    </div>
+                    <div className="mt-auto mb-12 px-14 flex items-center justify-between">
+                        <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                            <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={64} level="H" />
+                        </div>
+                        <div className="text-right">
+                            <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Signature Officielle</p>
+                        </div>
+                    </div>
+                </div>
+              </div>
+            </div>
+
+            <style>{`
+              @media print {
+                body * { visibility: hidden; }
+                .no-print { display: none !important; }
+                #service-card-export { 
+                  visibility: visible; 
+                  position: absolute; 
+                  left: 50%; 
+                  top: 50%; 
+                  transform: translate(-50%, -50%) scale(1.5);
+                  display: flex !important;
+                  opacity: 1 !important;
+                }
+              }
+            `}</style>
+            
+            <AnimatePresence>
+              {imageToCrop && (
+                <ImageCropper 
+                  image={imageToCrop}
+                  circular={cropperType === 'profile'}
+                  aspect={cropperType === 'profile' ? 1 : undefined}
+                  onCropComplete={onCropComplete}
+                  onCancel={() => {
+                    setImageToCrop(null);
+                    setCropperType(null);
+                  }}
+                />
+              )}
+            </AnimatePresence>
           </motion.div>
         ) : activeTab === 'notifications' ? (
           <motion.div 
@@ -584,8 +1012,51 @@ export default function Settings() {
                            <input type="text" value={settings.companyName} onChange={(e) => setSettings({...settings, companyName: e.target.value})} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white" />
                         </div>
                         <div>
-                           <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">URL du Logo</label>
-                           <input type="text" value={settings.logoUrl || ''} onChange={(e) => setSettings({...settings, logoUrl: e.target.value})} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white" />
+                           <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Logo de l'entreprise</label>
+                           <div className="flex gap-4">
+                              <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-700 shadow-inner">
+                                 {settings.logoUrl ? (
+                                    <img src={settings.logoUrl} alt="Logo Preview" className="w-full h-full object-contain" />
+                                 ) : (
+                                    <ImageIcon size={24} className="text-slate-300" />
+                                 )}
+                              </div>
+                              <div className="flex-1 space-y-2">
+                                 <input 
+                                   type="text" 
+                                   value={settings.logoUrl || ''} 
+                                   onChange={(e) => setSettings({...settings, logoUrl: e.target.value})} 
+                                   placeholder="URL du logo..."
+                                   className="w-full px-6 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white" 
+                                 />
+                                 <div className="flex gap-2">
+                                    <input 
+                                      type="file" 
+                                      ref={logoInputRef}
+                                      onChange={handleLogoUpload}
+                                      accept="image/*"
+                                      className="hidden" 
+                                    />
+                                    <button 
+                                      type="button"
+                                      onClick={() => logoInputRef.current?.click()}
+                                      className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                                    >
+                                       <Upload size={14} />
+                                       Importer
+                                    </button>
+                                    {settings.logoUrl && (
+                                       <button 
+                                          type="button"
+                                          onClick={() => setSettings({...settings, logoUrl: ''})}
+                                          className="px-4 py-3 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all"
+                                       >
+                                          Supprimer
+                                       </button>
+                                    )}
+                                 </div>
+                              </div>
+                           </div>
                         </div>
                      </div>
                      <div>
@@ -675,7 +1146,7 @@ export default function Settings() {
               </div>
             )}
             
-            {profile?.role === 'SUPER_ADMIN' && (
+            {(profile?.role === 'SUPER_ADMIN' || profile?.role === 'ADMIN') && (
               <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-sm mt-8">
                  <div className="flex justify-between items-center mb-8">
                     <div className="flex items-center gap-3">
@@ -775,7 +1246,7 @@ export default function Settings() {
                              <div className="mb-6">
                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4 border-b border-slate-50 dark:border-slate-800 pb-2">Configuration des Permissions</p>
                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-6 gap-x-8">
-                                  {Object.keys(editingRole.permissions).sort().map((perm) => (
+                                  {Object.keys(editingRole.permissions || {}).sort().map((perm) => (
                                     <div key={perm} className="flex items-center justify-between group">
                                        <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 capitalize">
                                           {perm.replace(/([A-Z])/g, ' $1').toLowerCase().replace('manage ', 'Gérer ').replace('view ', 'Voir ').replace('validate ', 'Valider ').replace('create ', 'Créer ').replace('access ', 'Accéder ')}
@@ -783,11 +1254,15 @@ export default function Settings() {
                                        <label className="relative inline-flex items-center cursor-pointer">
                                           <input 
                                             type="checkbox"
-                                            checked={(editingRole.permissions as any)[perm]}
-                                            onChange={(e) => setEditingRole({
-                                               ...editingRole,
-                                               permissions: { ...editingRole.permissions, [perm]: e.target.checked }
-                                            })}
+                                            checked={((editingRole.permissions || {}) as any)[perm]}
+                                            onChange={(e) => {
+                                               if (editingRole) {
+                                                  setEditingRole({
+                                                     ...editingRole,
+                                                     permissions: { ...editingRole.permissions, [perm]: e.target.checked } as RolePermission['permissions']
+                                                  });
+                                               }
+                                            }}
                                             className="sr-only peer"
                                           />
                                           <div className="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>

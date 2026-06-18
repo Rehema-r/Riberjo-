@@ -86,7 +86,7 @@
     },
     "InventoryItem": {
       "title": "InventoryItem",
-      "description": "Logistics stock item",
+      "description": "Logistics and Health stock item",
       "type": "object",
       "properties": {
         "name": { "type": "string" },
@@ -95,10 +95,28 @@
         "unit": { "type": "string" },
         "minThreshold": { "type": "number" },
         "location": { "type": "string" },
+        "departmentId": { "type": "string" },
         "lastUpdatedBy": { "type": "string" },
         "updatedAt": { "type": "number" }
       },
       "required": ["name", "quantity", "unit"]
+    },
+    "InventoryTransaction": {
+      "title": "InventoryTransaction",
+      "description": "Stock entry and egress transactions",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "type": { "type": "string", "enum": ["in", "out"] },
+        "quantity": { "type": "number" },
+        "description": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["itemId", "itemName", "type", "quantity", "departmentId", "createdAt"]
     },
     "SaleRecord": {
       "title": "SaleRecord",
@@ -142,6 +160,7 @@
         "authorId": { "type": "string" },
         "departmentId": { "type": "string" },
         "validatorId": { "type": "string" },
+        "taskId": { "type": "string" },
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" }
       },
@@ -154,11 +173,12 @@
       "properties": {
         "title": { "type": "string" },
         "description": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "pending_validation"] },
         "assigneeId": { "type": "string" },
         "creatorId": { "type": "string" },
         "departmentId": { "type": "string" },
         "deadline": { "type": "number" },
+        "completionReportText": { "type": "string" },
         "createdAt": { "type": "number" }
       },
       "required": ["title", "status", "assigneeId", "creatorId", "departmentId", "createdAt"]
@@ -266,7 +286,11 @@
     },
     "inventory/{itemId}": {
       "schema": "InventoryItem",
-      "description": "Logistics stock"
+      "description": "Logistics and Health stock"
+    },
+    "inventory_transactions/{transId}": {
+      "schema": "InventoryTransaction",
+      "description": "Logistics and Health stock entries/egresses"
     },
     "sales/{saleId}": {
       "schema": "SaleRecord",

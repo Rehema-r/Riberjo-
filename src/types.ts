@@ -89,6 +89,7 @@ export interface UserProfile {
   qrCode?: string;
   baseSalary?: number;
   avatarUrl?: string;
+  password?: string;
 }
 
 export interface Attendance {
@@ -305,8 +306,22 @@ export interface InventoryItem {
   unit: string;
   minThreshold: number;
   location?: string;
+  departmentId?: string;
   lastUpdatedBy: string;
   updatedAt: number;
+}
+
+export interface InventoryTransaction {
+  id: string;
+  itemId: string;
+  itemName: string;
+  type: 'in' | 'out';
+  quantity: number;
+  description: string;
+  departmentId: string;
+  userId: string;
+  userName: string;
+  createdAt: number;
 }
 
 export interface SaleRecord {
@@ -314,6 +329,7 @@ export interface SaleRecord {
   productName: string;
   quantity: number;
   price: number;
+  discount?: number;
   total: number;
   clientName: string;
   sellerId: string;
@@ -330,6 +346,8 @@ export interface ChatMessage {
   departmentId?: string;
   type: 'text' | 'file';
   fileUrl?: string;
+  fileName?: string;
+  fileSize?: number;
   createdAt: number;
 }
 
@@ -355,16 +373,18 @@ export interface Task {
   id: string;
   title: string;
   description: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'pending_validation';
   priority?: 'low' | 'medium' | 'high';
   assigneeId: string;
   creatorId: string;
   departmentId: string;
   deadline?: number;
+  category?: string;
   progress: number;
   subTasks: SubTask[];
   dependencies: string[];
   createdAt: number;
+  completionReportText?: string;
 }
 
 export interface AppNotification {
@@ -373,7 +393,14 @@ export interface AppNotification {
   title: string;
   message: string;
   read: boolean;
+  type: 'critical' | 'info' | 'task' | 'report';
   createdAt: number;
+  isCriticalAlert?: boolean;
+  alertSeverity?: 'critical' | 'warning' | 'info';
+  triggerSound?: boolean;
+  senderId?: string;
+  senderName?: string;
+  senderRole?: string;
 }
 
 export interface ActivityLog {

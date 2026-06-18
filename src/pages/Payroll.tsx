@@ -99,7 +99,7 @@ export default function PayrollPage() {
           <p className="text-slate-500 dark:text-slate-400 font-medium">Gestion des rémunérations et fiches de paie.</p>
         </div>
         <div className="flex items-center gap-3">
-          {(profile?.role === 'SUPER_ADMIN' || profile?.departmentId === '03' || profile?.departmentId === '04') && (
+          {(profile?.role === 'SUPER_ADMIN' || profile?.departmentId === 'all' || profile?.departmentId === '03' || profile?.departmentId === '04') && (
             <button className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl shadow-lg transition-all flex items-center gap-2">
               <DollarSign size={16} /> Générer Paie du Mois
             </button>

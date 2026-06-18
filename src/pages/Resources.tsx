@@ -172,7 +172,7 @@ export default function Resources() {
   };
 
   const filteredAssets = assets.filter(a => {
-    const matchesSearch = a.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (a.name || '').toLowerCase().includes((searchTerm || '').toLowerCase());
     const matchesDept = filterDept === 'all' || a.departmentId === filterDept;
     return matchesSearch && matchesDept;
   });
@@ -267,7 +267,7 @@ export default function Resources() {
                             <div className="flex items-center gap-3">
                                <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-800">
                                   {asset.imageUrl ? (
-                                    <img src={asset.imageUrl} alt={asset.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    <img src={asset.imageUrl || null} alt={asset.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                   ) : (
                                     getDeptIcon(asset.departmentId)
                                   )}
@@ -340,7 +340,7 @@ export default function Resources() {
             >
               <div className="relative h-64 bg-slate-100 dark:bg-slate-800">
                 {viewingAsset.imageUrl ? (
-                  <img src={viewingAsset.imageUrl} alt={viewingAsset.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img src={viewingAsset.imageUrl || null} alt={viewingAsset.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-700">
                     <Package size={80} strokeWidth={1} />

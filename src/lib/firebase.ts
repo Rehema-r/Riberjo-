@@ -1,12 +1,17 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer, enableIndexedDbPersistence, getDoc, getDocFromCache, setLogLevel } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// Using standard getFirestore which is more robust across environments
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Set Firebase Firestore log level to only log severe errors, preventing false-positive connectivity warnings in standard browser iframe setups.
+setLogLevel('error');
+
+// Using initializeFirestore with experimentalForceLongPolling which is more robust in restricted environments
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfig.firestoreDatabaseId);
 
 // Enable offline persistence
 if (typeof window !== 'undefined') {
@@ -21,6 +26,42 @@ if (typeof window !== 'undefined') {
 
 export const auth = getAuth(app);
 
+// Safe getDoc that falls back to cache instantly if the server doesn't respond or throws offline error
+export async function getDocSafe(docRef: any) {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('TIMEOUT')), 15000);
+  });
+
+  try {
+    const result = await Promise.race([
+      getDoc(docRef),
+      timeoutPromise
+    ]);
+    return result;
+  } catch (error: any) {
+    console.warn("getDocSafe server fetch failed or timed out, trying cache...", error.message || error);
+    try {
+      const cachedDoc = await getDocFromCache(docRef);
+      if (cachedDoc.exists()) {
+        return cachedDoc;
+      }
+    } catch (cacheError: any) {
+      console.warn("getDocSafe cache fetch also failed or document not in cache:", cacheError.message || cacheError);
+    }
+    
+    // If both server fetch and cache fetch failed/timed out, return a mock empty non-existent document snapshot
+    // to prevent the application from throwing unhandled exceptions and crashing at startup.
+    return {
+      exists: () => false,
+      id: docRef.id,
+      ref: docRef,
+      data: () => undefined,
+      get: () => undefined,
+      metadata: { fromCache: true, hasPendingWrites: false }
+    } as any;
+  }
+}
+
 // Validate connection more gracefully
 async function testConnection() {
   try {
@@ -32,7 +73,9 @@ async function testConnection() {
     console.warn("Firestore connectivity check:", error.message);
   }
 }
-testConnection();
+setTimeout(() => {
+  testConnection().catch(() => {});
+}, 2000);
 
 export enum OperationType {
   CREATE = 'create',

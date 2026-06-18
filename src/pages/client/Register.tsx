@@ -63,7 +63,7 @@ export default function ClientRegister() {
 
       const clientId = generateClientId(sequence);
       const password = generateClientPassword();
-      const qrCodeValue = `RIBERJO:${clientId}`;
+      const qrCodeValue = `${window.location.origin}/verify/${clientId}`;
 
       // 3. Create Auth User
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, password);

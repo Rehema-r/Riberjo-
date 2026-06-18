@@ -1,12 +1,12 @@
-import { collection, addDoc, getDoc, doc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, addDoc, doc } from 'firebase/firestore';
+import { db, getDocSafe } from '../lib/firebase';
 import { UserProfile } from '../types';
 
 export const notificationService = {
   /**
    * Sends a notification to a specific user via Firestore and optionally Email.
    */
-  async notify(userId: string, title: string, message: string, type: 'critical' | 'info' = 'info') {
+  async notify(userId: string, title: string, message: string, type: 'critical' | 'info' | 'task' | 'report' = 'info') {
     try {
       // 1. Add to Firestore for in-app notification
       await addDoc(collection(db, 'notifications'), {
@@ -23,7 +23,7 @@ export const notificationService = {
 
       // 3. Fetch user profile to check preferences and email
       const userRef = doc(db, 'users', userId);
-      const userSnap = await getDoc(userRef);
+      const userSnap = await getDocSafe(userRef);
       
       if (userSnap.exists()) {
         const user = userSnap.data() as UserProfile;
@@ -45,16 +45,28 @@ export const notificationService = {
    * Internal helper to trigger a browser notification
    */
   async triggerBrowserNotification(title: string, message: string) {
-    if ('Notification' in window) {
-      if (Notification.permission === 'granted') {
-        new Notification(title, { body: message });
-        try {
-          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-          audio.play().catch(e => console.log('Audio play failed:', e));
-        } catch (e) {}
-      } else if (Notification.permission === 'default') {
-        await Notification.requestPermission();
+    try {
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          try {
+            new Notification(title, { body: message });
+          } catch (err) {
+            console.warn("Failed to construct Notification object:", err);
+          }
+          try {
+            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+            audio.play().catch(e => console.log('Audio play failed:', e));
+          } catch (e) {}
+        } else if (Notification.permission === 'default') {
+          try {
+            await Notification.requestPermission();
+          } catch (error) {
+            console.warn("Could not request notification permission in this environment:", error);
+          }
+        }
       }
+    } catch (err) {
+      console.warn("Failed to trigger browser notification:", err);
     }
   },
 
@@ -81,8 +93,12 @@ export const notificationService = {
    * Request permission for browser notifications
    */
   async requestPermission() {
-    if ('Notification' in window) {
-      return await Notification.requestPermission();
+    try {
+      if ('Notification' in window) {
+        return await Notification.requestPermission();
+      }
+    } catch (e) {
+      console.warn("Notification.requestPermission failed:", e);
     }
     return 'denied';
   },
@@ -93,11 +109,11 @@ export const notificationService = {
   async notifyNewTask(userId: string, taskTitle: string) {
     // Check if user wants task notifications
     const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userSnap = await getDocSafe(userRef);
     if (userSnap.exists()) {
       const user = userSnap.data() as UserProfile;
       if (user.notificationPrefs?.newTasks !== false) {
-        await this.notify(userId, "Nouvelle Tâche Assignée", `On vous a assigné la tâche : ${taskTitle}`);
+        await this.notify(userId, "Nouvelle Tâche Assignée", `On vous a assigné la tâche : ${taskTitle}`, 'task');
       }
     }
   },
@@ -107,12 +123,12 @@ export const notificationService = {
    */
   async notifyReportValidation(userId: string, reportTitle: string, status: 'validated' | 'rejected') {
     const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userSnap = await getDocSafe(userRef);
     if (userSnap.exists()) {
       const user = userSnap.data() as UserProfile;
       if (user.notificationPrefs?.reportValidations !== false) {
         const statusText = status === 'validated' ? 'VALIDÉ' : 'REJETÉ';
-        await this.notify(userId, `Rapport ${statusText}`, `Votre rapport "${reportTitle}" a été ${statusText.toLowerCase()}.`);
+        await this.notify(userId, `Rapport ${statusText}`, `Votre rapport "${reportTitle}" a été ${statusText.toLowerCase()}.`, 'report');
       }
     }
   },
