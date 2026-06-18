@@ -92,6 +92,11 @@ export default function Dashboard() {
       if (!profile) return;
       setLoading(true);
 
+      let farmSize = 0;
+      let medSize = 0;
+      let netBalance = "FCFA 0";
+      let salesSize = 0;
+
       try {
         const usersPath = 'users';
         const reportsPath = 'reports';
@@ -128,10 +133,15 @@ export default function Dashboard() {
           const totalIncome = finance.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
           const totalEx = finance.filter(t => t.type === 'expense').reduce((acc, t) => acc + (t.amount || 0), 0);
 
+          farmSize = farmSnap.size;
+          medSize = medSnap.size;
+          netBalance = `FCFA ${(totalIncome - totalEx).toLocaleString('fr-FR')}`;
+          salesSize = salesSnap.size;
+
           setDepartmentsStatus({
             'Ferme': { count: farmSnap.size, label: 'Activités', trend: 'Ferme' },
             'Santé': { count: medSnap.size, label: 'Dossiers', trend: 'Santé' },
-            'Finance': { count: `$${(totalIncome - totalEx).toLocaleString()}`, label: 'Solde Net', trend: 'Finance' },
+            'Finance': { count: `FCFA ${(totalIncome - totalEx).toLocaleString('fr-FR')}`, label: 'Solde Net', trend: 'Finance' },
             'Ventes': { count: salesSnap.size, label: 'Transactions', trend: 'Marketing' }
           });
 
@@ -285,11 +295,39 @@ export default function Dashboard() {
           const completedTasks = deptTasks.filter(t => t.status === 'completed').length;
           const completionRate = deptTasks.length > 0 ? Math.round((completedTasks / deptTasks.length) * 100) : 0;
 
+          let countVal: any = deptAssets.length;
+          let labelVal = "Matériels";
+
+          if (profile.role === 'SUPER_ADMIN') {
+            if (dept.id === '01') {
+              countVal = farmSize;
+              labelVal = "Activités de production";
+            } else if (dept.id === '02') {
+              countVal = medSize;
+              labelVal = "Fiches Médicales rédigées";
+            } else if (dept.id === '03') {
+              countVal = usersSnap.docs.filter(u => u.data().departmentId === dept.id).length;
+              labelVal = "Employés sous direction";
+            } else if (dept.id === '04') {
+              countVal = netBalance;
+              labelVal = "Solde net trésorerie";
+            } else if (dept.id === '05') {
+              countVal = deptAssets.length;
+              labelVal = "Équipements enregistrés";
+            } else if (dept.id === '06') {
+              countVal = salesSize;
+              labelVal = "Transactions d'activité";
+            }
+          }
+
           status[dept.id] = {
+            id: dept.id,
             name: dept.name,
-            count: deptAssets.length,
+            count: countVal,
+            label: labelVal,
             low: deptAssets.filter(a => a.status !== 'in_stock').length,
-            completionRate
+            completionRate,
+            trend: `${completionRate}% Tâches Finies`
           };
         });
         setDepartmentsStatus(status);
@@ -510,11 +548,39 @@ export default function Dashboard() {
             {profile?.role === 'SUPER_ADMIN' && (
               Object.entries(departmentsStatus).map(([id, data]) => {
                 const deptData = data as any;
+                const deptId = deptData.id || id;
+                const deptName = deptData.name || id;
                 
-                // Simple icon mapping or fallback
-                const Icon = id === 'Ferme' ? Sprout : id === 'Santé' ? Stethoscope : id === 'Finance' ? DollarSign : id === 'Ventes' ? ShoppingBag : Package;
-                const colorClass = id === 'Ferme' ? 'text-emerald-600' : id === 'Santé' ? 'text-blue-600' : id === 'Finance' ? 'text-amber-600' : 'text-pink-600';
-                const bgClass = id === 'Ferme' ? 'bg-emerald-50 dark:bg-emerald-500/10' : id === 'Santé' ? 'bg-blue-50 dark:bg-blue-500/10' : id === 'Finance' ? 'bg-amber-50 dark:bg-amber-500/10' : 'bg-pink-50 dark:bg-pink-500/10';
+                // Map icons and colors precisely based on department ID ('01'-'06') or its name
+                let Icon = Package;
+                let colorClass = 'text-slate-600 dark:text-slate-400';
+                let bgClass = 'bg-slate-50 dark:bg-slate-500/10';
+
+                if (deptId === '01' || deptName.includes('Ferme') || deptName.includes('Agriculture')) {
+                  Icon = Sprout;
+                  colorClass = 'text-emerald-600 dark:text-emerald-400';
+                  bgClass = 'bg-emerald-50 dark:bg-emerald-500/10';
+                } else if (deptId === '02' || deptName.includes('Santé') || deptName.includes('Médical')) {
+                  Icon = Stethoscope;
+                  colorClass = 'text-blue-600 dark:text-blue-400';
+                  bgClass = 'bg-blue-50 dark:bg-blue-500/10';
+                } else if (deptId === '03' || deptName.includes('Ressources') || deptName.includes('RH')) {
+                  Icon = Users;
+                  colorClass = 'text-purple-600 dark:text-purple-400';
+                  bgClass = 'bg-purple-50 dark:bg-purple-500/10';
+                } else if (deptId === '04' || deptName.includes('Finance') || deptName.includes('Comptabilité')) {
+                  Icon = DollarSign;
+                  colorClass = 'text-amber-600 dark:text-amber-400';
+                  bgClass = 'bg-amber-50 dark:bg-amber-500/10';
+                } else if (deptId === '05' || deptName.includes('Logistique') || deptName.includes('Transport')) {
+                  Icon = Package; // Using Package from lucide-react (already imported)
+                  colorClass = 'text-orange-600 dark:text-orange-400';
+                  bgClass = 'bg-orange-50 dark:bg-orange-500/10';
+                } else if (deptId === '06' || deptName.includes('Marketing') || deptName.includes('Ventes')) {
+                  Icon = ShoppingBag;
+                  colorClass = 'text-pink-600 dark:text-pink-400';
+                  bgClass = 'bg-pink-50 dark:bg-pink-500/10';
+                }
 
                 return (
                   <div key={id} className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all group">
@@ -522,11 +588,11 @@ export default function Dashboard() {
                       <Icon size={20} />
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">{id}</p>
-                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{deptData.count || 0} {deptData.label}</p>
+                      <p className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">{deptName}</p>
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{deptData.count || 0} {deptData.label}</p>
                     </div>
                     <div className="text-right">
-                       <span className="text-[10px] font-black text-slate-500 uppercase">{deptData.trend}</span>
+                       <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">{deptData.trend}</span>
                     </div>
                   </div>
                 );
