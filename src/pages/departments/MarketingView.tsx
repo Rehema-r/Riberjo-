@@ -10,7 +10,7 @@ import {
   collection, query, orderBy, onSnapshot, limit, addDoc, doc, 
   updateDoc, deleteDoc, getDocs, where, setDoc 
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { SaleRecord, ClientOrder, ClientProfile, ClientType, UserProfile } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -74,6 +74,9 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setSales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SaleRecord)));
+    }, (error) => {
+      console.warn("MarketingView sales onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'sales');
     });
     return () => unsubscribe();
   }, []);
@@ -86,6 +89,9 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientOrder)));
+    }, (error) => {
+      console.warn("MarketingView client_orders onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'client_orders');
     });
     return () => unsubscribe();
   }, []);
@@ -98,6 +104,9 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientProfile)));
+    }, (error) => {
+      console.warn("MarketingView clients onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'clients');
     });
     return () => unsubscribe();
   }, []);

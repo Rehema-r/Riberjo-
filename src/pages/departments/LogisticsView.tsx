@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Truck, ShieldAlert, BarChart3, Plus, ArrowRight, CornerDownRight, History, Box, Search, ArrowUpDown } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot, limit, addDoc, updateDoc, doc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { InventoryItem, InventoryTransaction } from '../../types';
 import { motion } from 'motion/react';
@@ -43,6 +43,9 @@ export default function LogisticsView({ activeSpace = 'USER' }: { activeSpace?: 
       // Show logistics items (assigned to department '05' or having no departmentId for backwards compat)
       const logisticsItems = allItems.filter(item => !item.departmentId || item.departmentId === '05');
       setItems(logisticsItems);
+    }, (error) => {
+      console.warn("LogisticsView items onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'inventory');
     });
 
     return () => unsubscribe();
@@ -60,6 +63,9 @@ export default function LogisticsView({ activeSpace = 'USER' }: { activeSpace?: 
       // Show logistics transactions (assigned to department '05' or no departmentId for backwards compat)
       const logisticsTrans = allTrans.filter(t => !t.departmentId || t.departmentId === '05');
       setTransactions(logisticsTrans);
+    }, (error) => {
+      console.warn("LogisticsView transactions onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'inventory_transactions');
     });
 
     return () => unsubscribeTrans();

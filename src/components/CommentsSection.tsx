@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, limit } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { Comment } from '../types';
@@ -27,6 +27,10 @@ export default function CommentsSection({ parentId, parentType }: CommentsSectio
     const unsubscribe = onSnapshot(q, (snap) => {
       setComments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)));
       setLoading(false);
+    }, (error) => {
+      console.warn("CommentsSection onSnapshot operates in local cache mode:", error.message);
+      setLoading(false);
+      handleFirestoreError(error, OperationType.LIST, `${parentType}/${parentId}/comments`);
     });
 
     return () => unsubscribe();

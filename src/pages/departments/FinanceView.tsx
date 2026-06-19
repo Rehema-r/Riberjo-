@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { CreditCard, ArrowUpRight, ArrowDownLeft, DollarSign, Wallet, FileCheck, Search, Filter, PieChart, BarChart3 } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot, limit, addDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { FinanceTransaction } from '../../types';
 import { motion } from 'motion/react';
@@ -35,6 +35,9 @@ export default function FinanceView({ activeSpace = 'USER' }: { activeSpace?: 'U
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setTransactions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinanceTransaction)));
+    }, (error) => {
+      console.warn("FinanceView transactions onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'finance_transactions');
     });
 
     const qClaims = query(
@@ -43,6 +46,9 @@ export default function FinanceView({ activeSpace = 'USER' }: { activeSpace?: 'U
     );
     const unsubscribeClaims = onSnapshot(qClaims, (snapshot) => {
       setClaimsList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.warn("FinanceView claims onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'finance_claims');
     });
 
     return () => {

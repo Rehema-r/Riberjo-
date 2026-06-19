@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Stethoscope, Heart, Users, Activity, Plus, ShieldAlert, History, Search, ArrowUpDown, Box, HeartPulse, ListTodo, FolderHeart, Send, Thermometer } from 'lucide-react';
 import { collection, addDoc, query, orderBy, onSnapshot, limit, updateDoc, doc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { MedicalRecord, InventoryItem, InventoryTransaction } from '../../types';
 import { motion } from 'motion/react';
@@ -81,6 +81,9 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MedicalRecord)));
+    }, (error) => {
+      console.warn("HealthView records onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'medical_records');
     });
 
     const qV = query(
@@ -90,6 +93,9 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
     );
     const unsubscribeV = onSnapshot(qV, (snapshot) => {
       setVitals(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VitalRecord)));
+    }, (error) => {
+      console.warn("HealthView vitals onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'medical_vitals');
     });
 
     return () => {
@@ -112,6 +118,9 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
         (item.category === 'Médical' && !item.departmentId)
       );
       setInventoryItems(healthItems);
+    }, (error) => {
+      console.warn("HealthView inventory onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'inventory');
     });
 
     const qTrans = query(
@@ -125,6 +134,9 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
       // Filter transactions for departmentId '02'
       const healthTrans = allTrans.filter(t => t.departmentId === '02');
       setInventoryTransactions(healthTrans);
+    }, (error) => {
+      console.warn("HealthView transactions onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'inventory_transactions');
     });
 
     return () => {

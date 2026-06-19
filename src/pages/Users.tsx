@@ -29,6 +29,7 @@ import {
   Printer,
   Shield,
   FileText,
+  User,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
@@ -42,6 +43,7 @@ import {
   generateClientPassword,
 } from "../constants";
 import { QRCodeCanvas } from "qrcode.react";
+import * as htmlToImage from "html-to-image";
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
 
@@ -84,6 +86,10 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
     userId: string;
     fullName: string;
   } | null>(null);
+
+  const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'card'>('info');
+  const [isExporting, setIsExporting] = useState(false);
+  const cardRef = React.useRef<HTMLDivElement>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -330,6 +336,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
   };
 
   const openDetailModal = (user: UserProfile) => {
+    setActiveDetailTab('info');
     setSelectedUser(user);
     setEditData({
       fullName: user.fullName,
@@ -344,6 +351,43 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
       password: user.password || "",
     });
     setIsDetailModalOpen(true);
+  };
+
+  const handleDownloadCard = async () => {
+    if (!cardRef.current || !selectedUser) return;
+    setIsExporting(true);
+    try {
+      const dataUrl = await htmlToImage.toPng(cardRef.current, { 
+        quality: 1, 
+        pixelRatio: 4,
+        backgroundColor: '#ffffff'
+      });
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = 85.6; 
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      const x = (210 - pdfWidth) / 2;
+      const y = (297 - pdfHeight) / 2;
+      
+      pdf.addImage(dataUrl, 'PNG', x, y, pdfWidth, pdfHeight);
+      pdf.save(`Carte_Service_${selectedUser.fullName}.pdf`);
+      
+      setShowToast({ show: true, message: "Carte de service exportée avec succès !" });
+      setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
+    } catch (err) {
+      console.error(err);
+      setShowToast({ show: true, message: "Erreur lors de l'exportation de la carte." });
+      setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleDeleteUser = (userId: string, fullName: string) => {
@@ -1530,21 +1574,50 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                 </div>
               </div>
 
-              {/* Main Content / Edit Form */}
+              {/* Main Content / Edit Form or Card */}
               <div className="flex-1 p-6 md:p-10 overflow-y-auto">
-                <div className="flex justify-between items-center mb-10">
-                  <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                    Dossier Employé
-                  </h3>
-                  <button
-                    onClick={() => setIsDetailModalOpen(false)}
-                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all text-slate-400"
-                  >
-                    <X size={24} />
-                  </button>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                      Dossier Employé
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setActiveDetailTab('info')}
+                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                          activeDetailTab === 'info'
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Informations
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveDetailTab('card')}
+                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                          activeDetailTab === 'card'
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Carte de Service
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setIsDetailModalOpen(false)}
+                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all text-slate-400"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
 
-                <form onSubmit={handleUpdateDetails} className="space-y-8">
+                {activeDetailTab === 'info' ? (
+                  <form onSubmit={handleUpdateDetails} className="space-y-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">
@@ -1813,6 +1886,235 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                     </div>
                   )}
                 </form>
+                ) : (
+                  /* CARTE DE SERVICE PREVIEW AND ACTIONS */
+                  <div className="flex flex-col items-center justify-center gap-6 py-4">
+                    <div className="flex flex-col sm:flex-row gap-4 w-full">
+                       <button 
+                         type="button"
+                         onClick={handleDownloadCard}
+                         disabled={isExporting}
+                         className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-xl shadow-emerald-500/15 ${
+                           isExporting 
+                             ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 cursor-not-allowed' 
+                             : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-500/30'
+                         }`}
+                         title="Télécharger la carte en PDF"
+                       >
+                         {isExporting ? <div className="w-4 h-4 border-2 border-slate-400/30 border-t-emerald-600 rounded-full animate-spin"></div> : <Download size={16} />}
+                         <span>{isExporting ? "Téléchargement..." : "Télécharger PDF Officiel"}</span>
+                       </button>
+                    </div>
+
+                    <div className="flex flex-col xl:flex-row items-center justify-center gap-8 bg-slate-50 dark:bg-slate-900/40 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 border-dashed w-full overflow-hidden">
+                      {/* Front Side Preview */}
+                      <div className="flex flex-col items-center gap-3">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Avant</p>
+                        <div className="relative w-[280px] h-[437px] bg-white rounded-[2rem] shadow-xl border border-slate-100 flex flex-col pt-6 overflow-hidden text-slate-900">
+                          {/* Header Strip */}
+                          <div className="absolute top-0 left-0 w-full h-20 bg-slate-900 flex items-center px-6">
+                            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
+                              <img src={settings?.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
+                            </div>
+                            <div className="ml-3 text-left">
+                              <span className="text-white font-black text-[9px] uppercase tracking-wider leading-none block">{settings?.companyName || "RIBERJO GLOBAL SERVICE"}</span>
+                              <span className="text-emerald-400 font-black text-[6px] uppercase tracking-widest mt-1 block">Personnel Autorisé</span>
+                            </div>
+                          </div>
+
+                          {/* Photo Area */}
+                          <div className="mt-20 flex flex-col items-center">
+                            <div className="w-28 h-28 bg-slate-50 rounded-[30px] p-1 shadow-md border border-slate-100 relative">
+                              <div className="w-full h-full rounded-[24px] overflow-hidden bg-slate-200 flex items-center justify-center">
+                                {selectedUser.avatarUrl ? (
+                                  <img src={selectedUser.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                                ) : (
+                                  <User size={48} className="text-slate-400" />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Personal Info */}
+                          <div className="mt-5 px-6 text-center space-y-0.5">
+                            <span className="text-base font-black text-slate-900 uppercase tracking-tight leading-tight truncate block">{selectedUser.fullName}</span>
+                            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] block">{selectedUser.role.replace('_', ' ')}</span>
+                          </div>
+
+                          {/* Details Table */}
+                          <div className="mt-4 px-8 space-y-2 text-left">
+                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Matricule</span>
+                              <span className="text-[10px] font-mono font-black text-slate-900">{selectedUser.matricule}</span>
+                            </div>
+                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Département</span>
+                              <span className="text-[9px] font-black text-slate-900 truncate max-w-[110px]" title={DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId}>
+                                {DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Service</span>
+                              <span className="text-[9px] font-black text-slate-900 truncate max-w-[110px]">
+                                {(() => {
+                                  const matchingService = SERVICES_LIST.find(
+                                    (s) =>
+                                      s.deptId === selectedUser.departmentId &&
+                                      s.id === selectedUser.serviceId,
+                                  );
+                                  if (matchingService) {
+                                    return `${matchingService.name}`;
+                                  }
+                                  return selectedUser.serviceId ? `Service ${selectedUser.serviceId}` : "Général";
+                                })()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Validité</span>
+                              <span className="text-[10px] font-black text-slate-900">31 DEC 2026</span>
+                            </div>
+                          </div>
+
+                          {/* Footer QR */}
+                          <div className="mt-auto mb-5 px-8 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 leading-none">
+                              <div className="bg-slate-50 p-1 rounded-lg border border-slate-100 shadow-inner">
+                                <QRCodeCanvas value={`${window.location.origin}/verify/${selectedUser.matricule.replace(/\//g, '_')}`} size={36} level="M" />
+                              </div>
+                              <div className="text-left leading-none">
+                                <span className="text-[5px] font-black text-emerald-600 uppercase tracking-wider mb-0.5 block">VÉRIFIER</span>
+                                <span className="text-[4px] font-bold text-slate-400 uppercase tracking-normal leading-tight block">Scanner pour<br/>l'authenticité</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="h-6 w-16 border-b border-slate-900 mb-0.5 opacity-20"></div>
+                              <span className="text-[5px] font-black text-slate-400 uppercase tracking-widest leading-none block">Signature</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Back Side Preview */}
+                      <div className="flex flex-col items-center gap-3">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Arrière</p>
+                        <div className="relative w-[280px] h-[437px] bg-slate-900 rounded-[2rem] shadow-xl flex flex-col p-6 text-white text-left">
+                          <div className="flex justify-center mb-4 opacity-20">
+                            <Briefcase size={36} />
+                          </div>
+                          
+                          <h3 className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-3">Conditions d'Utilisation</h3>
+                          <div className="text-[6px] text-slate-400 leading-relaxed uppercase font-bold tracking-wider space-y-2">
+                            <p>1. Cette carte est strictement personnelle et incessible.</p>
+                            <p>2. Elle demeure la propriété exclusive de {settings?.companyName || "RIBERJO GLOBAL SERVICE"}.</p>
+                            <p>3. En cas de perte, le titulaire doit en informer immédiatement la direction.</p>
+                            <p>4. Elle doit être portée visiblement lors de l'exercice des fonctions.</p>
+                            <p>5. Toute utilisation frauduleuse expose son auteur à des poursuites.</p>
+                          </div>
+
+                          <div className="mt-auto space-y-4">
+                            <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                              <span className="text-[6px] font-black text-slate-500 uppercase tracking-widest mb-0.5 italic block">Contact d'Urgence</span>
+                              <span className="text-[8px] font-black uppercase tracking-widest block">+243 812 345 678</span>
+                            </div>
+                            
+                            <div className="flex flex-col items-center gap-1.5">
+                              <div className="w-8 h-0.5 bg-emerald-500 rounded-full"></div>
+                              <span className="text-[6px] font-black text-slate-500 uppercase tracking-[0.3em] block">www.riberjo.com</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hidden export template for this individual user */}
+                    <div className="fixed -top-[2000px] left-0 pointer-events-none opacity-0">
+                      <div ref={cardRef} className="w-[400px] h-[640px] bg-white flex flex-col pt-10 relative text-slate-900">
+                        {/* Header Strip */}
+                        <div className="absolute top-0 left-0 w-full h-28 bg-slate-900 flex items-center px-10">
+                          <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center overflow-hidden p-1 shrink-0">
+                            <img src={settings?.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="" className="w-full h-full object-contain" />
+                          </div>
+                          <div className="ml-5 text-left">
+                            <span className="text-white font-black text-xs uppercase tracking-widest leading-none block">{settings?.companyName || "RIBERJO GLOBAL SERVICE"}</span>
+                            <span className="text-emerald-400 font-black text-[8px] uppercase tracking-widest mt-1 block">Personnel Autorisé</span>
+                          </div>
+                        </div>
+
+                        {/* Photo Area */}
+                        <div className="mt-28 flex flex-col items-center">
+                          <div className="w-40 h-40 bg-white rounded-[45px] p-2 shadow-2xl border border-slate-100 flex items-center justify-center">
+                            <div className="w-full h-full rounded-[38px] overflow-hidden bg-slate-100 flex items-center justify-center">
+                              {selectedUser.avatarUrl ? (
+                                <img src={selectedUser.avatarUrl} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <User size={80} className="text-slate-300" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Personal Info */}
+                        <div className="mt-10 px-10 text-center">
+                          <span className="text-2xl font-black text-slate-900 uppercase tracking-tight block">{selectedUser.fullName}</span>
+                          <span className="text-xs font-black text-emerald-600 uppercase tracking-[0.2em] mt-2 block">
+                            {selectedUser.role.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        {/* Details Table */}
+                        <div className="mt-10 px-14 space-y-6 text-left">
+                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Matricule</span>
+                            <span className="text-sm font-mono font-black text-slate-900">{selectedUser.matricule}</span>
+                          </div>
+                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Département</span>
+                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
+                              {DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId} ({selectedUser.departmentId})
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Service</span>
+                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
+                              {(() => {
+                                const matchingService = SERVICES_LIST.find(
+                                  (s) =>
+                                    s.deptId === selectedUser.departmentId &&
+                                    s.id === selectedUser.serviceId,
+                                );
+                                if (matchingService) {
+                                  return `${matchingService.name} (${matchingService.id})`;
+                                }
+                                return selectedUser.serviceId ? `Service ${selectedUser.serviceId}` : "Général";
+                              })()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Validité</span>
+                            <span className="text-sm font-black text-slate-900">31/12/2026</span>
+                          </div>
+                        </div>
+
+                        {/* Footer QR */}
+                        <div className="mt-auto mb-12 px-14 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                              <QRCodeCanvas value={`${window.location.origin}/verify/${selectedUser.matricule.replace(/\//g, '_')}`} size={64} level="H" />
+                            </div>
+                            <div className="text-left leading-none">
+                              <span className="text-[8px] font-black text-emerald-600 uppercase tracking-wider mb-1 block">VÉRIFIER L'AUTHENTICITÉ</span>
+                              <span className="text-[7px] font-medium text-slate-450 uppercase tracking-normal leading-normal block">Scanner le code QR pour<br/>vérifier l'authenticité</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] block">Signature Officielle</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

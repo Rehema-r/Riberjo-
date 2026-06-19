@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, UserPlus, ShieldAlert, Award, FileText, Search, UserCheck, Briefcase, Mail, TrendingUp, Calendar, Trash2, Layers, AlertCircle, Sparkles, HelpCircle } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot, setDoc, doc, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserProfile } from '../../types';
 import { motion } from 'motion/react';
@@ -75,6 +75,9 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile)));
+    }, (error) => {
+      console.warn("HRView employees onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'users');
     });
 
     const qF = query(
@@ -84,6 +87,9 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
 
     const unsubscribeF = onSnapshot(qF, (snapshot) => {
       setSavedForecasts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.warn("HRView forecasts onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'hr_forecasts');
     });
 
     const qL = query(
@@ -92,6 +98,9 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
     );
     const unsubscribeL = onSnapshot(qL, (snapshot) => {
       setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.warn("HRView leaves onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'hr_leaves');
     });
 
     return () => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sprout, Beaker, ShieldCheck, Plus, Calendar, TrendingUp, Info, ListTodo, AlertTriangle, Eye, Send, Crown, CheckSquare } from 'lucide-react';
 import { collection, addDoc, query, orderBy, onSnapshot, limit, doc, setDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { FarmActivity } from '../../types';
 import { motion } from 'motion/react';
@@ -52,6 +52,9 @@ export default function FarmView({ activeSpace = 'USER' }: { activeSpace?: 'USER
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setActivities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FarmActivity)));
+    }, (error) => {
+      console.warn("FarmView activities onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'farm_activities');
     });
 
     const qObs = query(
@@ -62,6 +65,9 @@ export default function FarmView({ activeSpace = 'USER' }: { activeSpace?: 'USER
 
     const unsubscribeObs = onSnapshot(qObs, (snapshot) => {
       setObservations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FarmObservation)));
+    }, (error) => {
+      console.warn("FarmView observations onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.LIST, 'farm_observations');
     });
 
     const unsubscribeDirective = onSnapshot(doc(db, 'farm_directives', 'latest'), (snapshot) => {
@@ -70,6 +76,9 @@ export default function FarmView({ activeSpace = 'USER' }: { activeSpace?: 'USER
         setDirectorDirective(text || "");
         setDirectiveInput(text || "");
       }
+    }, (error) => {
+      console.warn("FarmView directives onSnapshot operates in local cache mode:", error.message);
+      handleFirestoreError(error, OperationType.GET, 'farm_directives/latest');
     });
 
     return () => {

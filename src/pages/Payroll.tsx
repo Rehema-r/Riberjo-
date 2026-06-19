@@ -26,6 +26,10 @@ export default function PayrollPage() {
       const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Payroll));
       setPayrollHistory(records);
       setIsLoading(false);
+    }, (error) => {
+      console.warn("Payroll onSnapshot operates in local cache mode:", error.message);
+      setIsLoading(false);
+      handleFirestoreError(error, OperationType.LIST, 'payroll');
     });
 
     return () => unsubscribe();

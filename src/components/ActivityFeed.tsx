@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { ActivityLog } from '../types';
 import { Clock, FileText, CheckCircle2, User, AlertTriangle, PlusCircle, ArrowRightCircle } from 'lucide-react';
@@ -19,6 +19,10 @@ export default function ActivityFeed() {
     const unsubscribe = onSnapshot(q, (snap) => {
       setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog)));
       setLoading(false);
+    }, (error) => {
+      console.warn("ActivityFeed onSnapshot operates in local cache mode:", error.message);
+      setLoading(false);
+      handleFirestoreError(error, OperationType.LIST, 'activities');
     });
 
     return () => unsubscribe();

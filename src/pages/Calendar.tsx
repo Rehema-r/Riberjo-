@@ -26,6 +26,10 @@ export default function CalendarPage() {
       const records = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CalendarEvent));
       setEvents(records);
       setIsLoading(false);
+    }, (error) => {
+      console.warn("Calendar onSnapshot operates in local cache mode:", error.message);
+      setIsLoading(false);
+      handleFirestoreError(error, OperationType.LIST, 'calendar_events');
     });
 
     return () => unsubscribe();
