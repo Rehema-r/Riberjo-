@@ -66,6 +66,21 @@ export default function DepartmentHub({ departmentId }: { departmentId?: string 
     }
   };
 
+  // The DG (SUPER_ADMIN) is not allowed to navigate inside specific department workspaces of other members
+  if (profile?.role === 'SUPER_ADMIN') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-12 text-center bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-150 dark:border-slate-800 shadow-sm">
+        <div className="w-20 h-20 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-3xl flex items-center justify-center mb-6 shadow-sm animate-bounce">
+          <Lock size={40} />
+        </div>
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-2">Accès restreint</h2>
+        <p className="text-slate-500 dark:text-slate-400 max-w-md font-medium">
+          Le Directeur Général (DG) n'a pas l'autorisation d'accéder aux espaces de travail spécifiques des départements des autres membres.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Space Selector Banner */}

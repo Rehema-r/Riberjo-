@@ -154,7 +154,7 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
     
     // If it's a specific department page, check if user belongs to it or is super admin or admin with 'all'
     if (item.dept) {
-      if (profile?.role === 'SUPER_ADMIN') return true;
+      if (profile?.role === 'SUPER_ADMIN') return false; // Le DG n'a pas le droit de naviguer dans les espaces de travail des autres membres
       if (profile?.role === 'ADMIN' && profile?.departmentId === 'all') return true;
       return profile?.departmentId === item.dept;
     }
