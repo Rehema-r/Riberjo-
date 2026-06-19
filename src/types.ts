@@ -355,7 +355,7 @@ export interface Report {
   id: string;
   title: string;
   content: string;
-  status: 'draft' | 'pending' | 'validated' | 'rejected';
+  status: 'draft' | 'pending' | 'validated' | 'rejected' | 'pending_expert' | 'pending_admin' | 'pending_dg';
   authorId: string;
   departmentId: string;
   validatorId?: string;

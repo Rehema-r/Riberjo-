@@ -32,6 +32,73 @@ export default function Reports() {
     fetchData();
   }, [profile]);
 
+  const getStatusDetails = (status: Report['status']) => {
+    switch (status) {
+      case 'validated':
+        return {
+          label: 'Validé (DG)',
+          className: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400',
+          icon: CheckCircle
+        };
+      case 'rejected':
+        return {
+          label: 'Rejeté',
+          className: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400',
+          icon: XCircle
+        };
+      case 'pending_expert':
+        return {
+          label: 'En attente - Expert',
+          className: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400',
+          icon: Clock
+        };
+      case 'pending_admin':
+        return {
+          label: 'En attente - Admin',
+          className: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
+          icon: Clock
+        };
+      case 'pending_dg':
+        return {
+          label: 'En attente - DG',
+          className: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400',
+          icon: Clock
+        };
+      default:
+        return {
+          label: 'En attente',
+          className: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400',
+          icon: Clock
+        };
+    }
+  };
+
+  const canApproveReport = (report: Report | null) => {
+    if (!profile || !report) return false;
+    
+    // 1. Travailleur (USER) -> Expert (SUPER_USER)
+    if (report.status === 'pending_expert') {
+      return profile.role === 'SUPER_USER' && profile.departmentId === report.departmentId;
+    }
+    
+    // 2. Expert (SUPER_USER) -> Admin (ADMIN)
+    if (report.status === 'pending_admin') {
+      return profile.role === 'ADMIN' && (profile.departmentId === 'all' || profile.departmentId === report.departmentId);
+    }
+    
+    // 3. Admin (ADMIN) -> DG (SUPER_ADMIN)
+    if (report.status === 'pending_dg') {
+      return profile.role === 'SUPER_ADMIN';
+    }
+    
+    // Legacy support
+    if (report.status === 'pending') {
+      return profile.role === 'SUPER_ADMIN' || (profile.role === 'ADMIN' && (profile.departmentId === 'all' || profile.departmentId === report.departmentId));
+    }
+    
+    return false;
+  };
+
   async function fetchData() {
     if (!profile) return;
     setLoading(true);
@@ -39,15 +106,22 @@ export default function Reports() {
       const reportsPath = 'reports';
       let q = query(collection(db, reportsPath), orderBy('createdAt', 'desc'));
       
-      // Role based filtering
-      if (profile.role === 'SUPER_USER') {
+      // Role based filtering matching the new three-tier workflow
+      if (profile.role === 'USER') {
+        // Workers only see their own submitted reports
         q = query(collection(db, reportsPath), where('authorId', '==', profile.id), orderBy('createdAt', 'desc'));
+      } else if (profile.role === 'SUPER_USER') {
+        // Experts see reports in their own department (to approve those from workers) or their own
+        q = query(collection(db, reportsPath), where('departmentId', '==', profile.departmentId), orderBy('createdAt', 'desc'));
       } else if (profile.role === 'ADMIN') {
         if (profile.departmentId === 'all') {
           q = query(collection(db, reportsPath), orderBy('createdAt', 'desc'));
         } else {
           q = query(collection(db, reportsPath), where('departmentId', '==', profile.departmentId), orderBy('createdAt', 'desc'));
         }
+      } else {
+        // DG (SUPER_ADMIN), BOARD_MEMBER see all reports
+        q = query(collection(db, reportsPath), orderBy('createdAt', 'desc'));
       }
 
       const snap = await getDocs(q).catch(err => {
@@ -153,9 +227,18 @@ export default function Reports() {
     e.preventDefault();
     const reportsPath = 'reports';
     try {
+      let initialStatus: Report['status'] = 'pending_expert';
+      if (profile?.role === 'SUPER_USER') {
+        initialStatus = 'pending_admin';
+      } else if (profile?.role === 'ADMIN') {
+        initialStatus = 'pending_dg';
+      } else if (profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER') {
+        initialStatus = 'validated';
+      }
+
       const newReport = {
         ...formData,
-        status: 'pending',
+        status: initialStatus,
         authorId: profile?.id,
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -166,7 +249,7 @@ export default function Reports() {
         type: 'report_created',
         userId: profile?.id || '',
         userName: profile?.fullName || 'Utilisateur',
-        details: `A créé le rapport "${newReport.title}"`,
+        details: `A créé le rapport "${newReport.title}" (Statut initial: ${initialStatus})`,
         departmentId: newReport.departmentId
       });
 
@@ -178,35 +261,80 @@ export default function Reports() {
     }
   };
 
-  const handleStatusChange = async (reportId: string, status: 'validated' | 'rejected') => {
+  const handleStatusChange = async (reportId: string, action: 'approve' | 'reject') => {
     const reportPath = `reports/${reportId}`;
     try {
       const report = reports.find(r => r.id === reportId);
+      if (!report) return;
+
+      let nextStatus: Report['status'] = 'pending';
+      const currentUserRole = profile?.role;
+
+      if (action === 'reject') {
+        nextStatus = 'rejected';
+      } else {
+        // Approve action: compute next step
+        if (report.status === 'pending_expert') {
+          nextStatus = 'pending_admin';
+        } else if (report.status === 'pending_admin') {
+          nextStatus = 'pending_dg';
+        } else if (report.status === 'pending_dg') {
+          nextStatus = 'validated';
+        } else {
+          // Fallback or generic pending
+          nextStatus = 'validated';
+        }
+      }
+
       await updateDoc(doc(db, 'reports', reportId), {
-        status,
+        status: nextStatus,
         validatorId: profile?.id,
         updatedAt: Date.now()
       });
 
-      if (report) {
-         await notificationService.notifyReportValidation(report.authorId, report.title, status);
-         
-         await activityService.log({
-           type: status === 'validated' ? 'report_validated' : 'report_rejected',
-           userId: profile?.id || '',
-           userName: profile?.fullName || 'Administrateur',
-           details: `${status === 'validated' ? 'A validé' : 'A rejeté'} le rapport "${report.title}"`,
-           targetId: reportId,
-           departmentId: report.departmentId
-         });
+      // Update current displayed modal state if open
+      if (viewingReport && viewingReport.id === reportId) {
+        setViewingReport({
+          ...viewingReport,
+          status: nextStatus,
+          validatorId: profile?.id,
+          updatedAt: Date.now()
+        });
+      }
 
-         if (status === 'validated') {
-           await notificationService.notifyRole(
-             'SUPER_ADMIN', 
-             'Rapport Validé pour Consultation', 
-             `Le rapport "${report.title}" du département ${report.departmentId} a été validé et est prêt pour votre consultation finale.`
-           );
-         }
+      // Notify and log activity
+      await notificationService.notifyReportValidation(report.authorId, report.title, nextStatus);
+      
+      await activityService.log({
+        type: nextStatus === 'rejected' ? 'report_rejected' : 'report_validated',
+        userId: profile?.id || '',
+        userName: profile?.fullName || 'Utilisateur',
+        details: `${action === 'approve' ? 'A approuvé et transmis' : 'A rejeté'} le rapport "${report.title}" (Statut: ${nextStatus})`,
+        targetId: reportId,
+        departmentId: report.departmentId
+      });
+
+      // Dispatch targeted tier notifications
+      if (action === 'approve') {
+        if (nextStatus === 'pending_admin') {
+          await notificationService.notifyRole(
+            'ADMIN',
+            'Rapport visé par Expert',
+            `Le rapport "${report.title}" du département ${report.departmentId} a été visé par l'Expert technique et attend votre approbation en tant qu'Admin.`
+          );
+        } else if (nextStatus === 'pending_dg') {
+          await notificationService.notifyRole(
+            'SUPER_ADMIN',
+            'Rapport soumis à validation DG',
+            `Le rapport "${report.title}" du département ${report.departmentId} a été approuvé par l'Admin et attend votre validation finale de Direction (DG).`
+          );
+        } else if (nextStatus === 'validated') {
+          await notificationService.notifyRole(
+            'BOARD_MEMBER',
+            'Nouveau rapport validé par la Direction',
+            `Le rapport "${report.title}" a reçu la validation finale du DG.`
+          );
+        }
       }
 
       fetchData();
@@ -246,7 +374,9 @@ export default function Reports() {
     doc.setFontSize(9);
     doc.setTextColor(80);
     doc.text(`Identifiant: ${report.id}`, 20, 52);
-    doc.text(`Statut: ${report.status === 'pending' ? 'EN ATTENTE' : report.status === 'validated' ? 'VALIDÉ' : 'REJETÉ'}`, 20, 57);
+    
+    const reportStatusLabel = getStatusDetails(report.status).label.toUpperCase();
+    doc.text(`Statut: ${reportStatusLabel}`, 20, 57);
     doc.text(`Département: ${report.departmentId}`, 20, 62);
     
     // Divider
@@ -302,7 +432,14 @@ export default function Reports() {
   };
 
   const filteredReports = reports.filter(r => {
-    const statusMatch = statusFilter === 'all' ? true : r.status === statusFilter;
+    let statusMatch = false;
+    if (statusFilter === 'all') {
+      statusMatch = true;
+    } else if (statusFilter === 'pending') {
+      statusMatch = r.status === 'pending' || r.status === 'pending_expert' || r.status === 'pending_admin' || r.status === 'pending_dg';
+    } else {
+      statusMatch = r.status === statusFilter;
+    }
     const deptMatch = deptFilter === 'all' ? true : r.departmentId === deptFilter;
     return statusMatch && deptMatch;
   });
@@ -325,7 +462,7 @@ export default function Reports() {
               Auto-Générer Rapport
             </button>
           )}
-          {profile?.role === 'SUPER_USER' && (
+          {(profile?.role === 'USER' || profile?.role === 'SUPER_USER' || profile?.role === 'ADMIN') && (
             <button 
               onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg"
@@ -427,6 +564,8 @@ export default function Reports() {
                 <div className={`p-4 rounded-2xl ${
                   report.status === 'validated' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
                   report.status === 'rejected' ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400' :
+                  report.status === 'pending_admin' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                  report.status === 'pending_dg' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' :
                   'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400'
                 }`}>
                   <FileText size={24} />
@@ -450,27 +589,23 @@ export default function Reports() {
               </div>
 
               <div className="flex items-center gap-4 ml-auto md:ml-0">
-                <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                   report.status === 'validated' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' :
-                   report.status === 'rejected' ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' :
-                   'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
-                }`}>
-                   {report.status === 'pending' ? <Clock size={12} /> : report.status === 'validated' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                   {report.status === 'pending' ? 'en attente' : report.status === 'validated' ? 'validé' : 'rejeté'}
+                <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${getStatusDetails(report.status).className}`}>
+                   {React.createElement(getStatusDetails(report.status).icon, { size: 12 })}
+                   {getStatusDetails(report.status).label}
                 </div>
 
-                {/* Quick Actions for Admins */}
-                {report.status === 'pending' && (profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN') && (
+                {/* Quick Actions for Supervisors */}
+                {canApproveReport(report) && (
                   <div className="flex items-center gap-2 border-l border-slate-100 dark:border-slate-800 pl-4">
                     <button 
-                      onClick={(e) => { e.stopPropagation(); handleStatusChange(report.id, 'validated'); }}
+                      onClick={(e) => { e.stopPropagation(); handleStatusChange(report.id, 'approve'); }}
                       className="p-2 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-500 transition-all shadow-sm"
-                      title="Valider"
+                      title="Viser/Approuver"
                     >
                       <CheckCircle size={18} />
                     </button>
                     <button 
-                      onClick={(e) => { e.stopPropagation(); handleStatusChange(report.id, 'rejected'); }}
+                      onClick={(e) => { e.stopPropagation(); handleStatusChange(report.id, 'reject'); }}
                       className="p-2 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl hover:bg-red-600 hover:text-white dark:hover:bg-red-500 transition-all shadow-sm"
                       title="Rejeter"
                     >
@@ -566,13 +701,9 @@ export default function Reports() {
                     <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{viewingReport.title}</h2>
                   </div>
                   <div className="flex items-center gap-3">
-                     <div className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] ${
-                       viewingReport.status === 'validated' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 
-                       viewingReport.status === 'rejected' ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' :
-                       'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
-                     }`}>
-                       {viewingReport.status === 'pending' ? <Clock size={14} /> : viewingReport.status === 'validated' ? <CheckCircle size={14} /> : <XCircle size={14} />}
-                       {viewingReport.status === 'pending' ? 'en attente' : viewingReport.status === 'validated' ? 'validé' : 'rejeté'}
+                     <div className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] ${getStatusDetails(viewingReport.status).className}`}>
+                       {React.createElement(getStatusDetails(viewingReport.status).icon, { size: 14 })}
+                       {getStatusDetails(viewingReport.status).label}
                      </div>
                      <button 
                        onClick={() => generatePDF(viewingReport)}
@@ -603,8 +734,8 @@ export default function Reports() {
                             <ShieldCheck size={16} />
                           </div>
                           <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Validé par</p>
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{users[viewingReport.validatorId] || 'Administrateur'}</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Traité par</p>
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{users[viewingReport.validatorId] || 'Responsable'}</p>
                           </div>
                         </div>
                       )}
@@ -622,40 +753,40 @@ export default function Reports() {
                           <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{new Date(viewingReport.createdAt || Date.now()).toLocaleString()}</p>
                         </div>
                       </div>
-
-                      {viewingReport.status !== 'pending' && (
+ 
+                      {viewingReport.validatorId && (
                         <div className="flex items-center gap-3 text-slate-500">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${viewingReport.status === 'validated' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600' : 'bg-red-100 dark:bg-red-500/20 text-red-600'}`}>
-                            {viewingReport.status === 'validated' ? <CheckCircle size={16} /> : <XCircle size={16} />}
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${getStatusDetails(viewingReport.status).className}`}>
+                            {React.createElement(getStatusDetails(viewingReport.status).icon, { size: 16 })}
                           </div>
                           <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Date de décision</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Dernière décision</p>
                             <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{new Date(viewingReport.updatedAt || Date.now()).toLocaleString()}</p>
                           </div>
                         </div>
                       )}
                     </div>
                   </div>
-
+ 
                   <div className="prose prose-slate dark:prose-invert max-w-none px-2">
                     <p className="whitespace-pre-wrap text-slate-600 dark:text-slate-400 leading-relaxed font-medium">{viewingReport.content}</p>
                   </div>
-
+ 
                   <CommentsSection parentId={viewingReport.id} parentType="reports" />
                </div>
-               {viewingReport.status === 'pending' && (profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN') && (
+               {canApproveReport(viewingReport) && (
                  <div className="p-8 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row gap-4 bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
                     <button 
-                      onClick={() => handleStatusChange(viewingReport.id, 'rejected')}
+                      onClick={() => handleStatusChange(viewingReport.id, 'reject')}
                       className="flex-1 py-4 bg-white dark:bg-slate-900 border border-red-100 dark:border-red-900/30 text-red-600 font-bold rounded-2xl hover:bg-red-50 dark:hover:bg-red-500/10 transition-all flex items-center justify-center gap-2"
                     >
                       <XCircle size={20} /> Rejeter
                     </button>
                     <button 
-                       onClick={() => handleStatusChange(viewingReport.id, 'validated')}
+                       onClick={() => handleStatusChange(viewingReport.id, 'approve')}
                        className="flex-1 py-4 bg-emerald-600 text-white font-bold rounded-2xl hover:bg-emerald-700 shadow-xl shadow-emerald-100 dark:shadow-none transition-all flex items-center justify-center gap-2"
                     >
-                      <CheckCircle size={20} /> Valider le rapport
+                      <CheckCircle size={20} /> {viewingReport.status === 'pending_dg' ? 'Valider (Décision finale DG)' : 'Approuver & Transmettre'}
                     </button>
                  </div>
                )}

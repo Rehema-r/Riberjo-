@@ -121,14 +121,20 @@ export const notificationService = {
   /**
    * Notify about report validation
    */
-  async notifyReportValidation(userId: string, reportTitle: string, status: 'validated' | 'rejected') {
+  async notifyReportValidation(userId: string, reportTitle: string, status: 'validated' | 'rejected' | 'pending_admin' | 'pending_dg' | 'pending_expert' | 'pending') {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDocSafe(userRef);
     if (userSnap.exists()) {
       const user = userSnap.data() as UserProfile;
       if (user.notificationPrefs?.reportValidations !== false) {
-        const statusText = status === 'validated' ? 'VALIDÉ' : 'REJETÉ';
-        await this.notify(userId, `Rapport ${statusText}`, `Votre rapport "${reportTitle}" a été ${statusText.toLowerCase()}.`, 'report');
+        let statusText = 'mis à jour';
+        if (status === 'validated') statusText = 'VALIDÉ PAR LE DG';
+        else if (status === 'rejected') statusText = 'REJETÉ';
+        else if (status === 'pending_admin') statusText = 'APPROUVÉ PAR L\'EXPERT (Transmis à l\'Admin)';
+        else if (status === 'pending_dg') statusText = 'APPROUVÉ PAR L\'ADMIN (Transmis au DG)';
+        else if (status === 'pending_expert') statusText = 'SOUMIS (En attente Expert)';
+
+        await this.notify(userId, `Rapport : ${statusText}`, `Votre rapport "${reportTitle}" a progressé : ${statusText.toLowerCase()}.`, 'report');
       }
     }
   },
