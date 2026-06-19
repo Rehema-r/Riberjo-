@@ -280,7 +280,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (isDG && isDGPwd && userData.password !== inputPassword) {
             updates.password = inputPassword;
           }
-          if (!userData.authUid && firebaseUser) {
+          // Link or update the authUid to match the current Firebase Auth user (anonymous or Google)
+          // on successful password login, so they are linked and can switch accounts correctly.
+          if (firebaseUser && userData.authUid !== firebaseUser.uid) {
             updates.authUid = firebaseUser.uid;
           }
           
@@ -337,15 +339,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    localStorage.removeItem('riberjo_matricule');
-    setProfile(null);
-    setProfileLoading(false);
-    setMatricule(null);
     try {
       await firebaseSignOut(auth);
     } catch (err) {
       console.error("Firebase signOut error:", err);
     }
+    localStorage.removeItem('riberjo_matricule');
+    setProfile(null);
+    setProfileLoading(false);
+    setMatricule(null);
   };
 
   const changePassword = async (newPassword: string) => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../lib/firebase';
-import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, orderBy, addDoc } from 'firebase/firestore';
 import { ClientProfile, ClientAppointment, ClientOrder } from '../../types';
 import { motion } from 'motion/react';
 import { 
@@ -17,16 +17,59 @@ import {
   Sprout,
   Stethoscope,
   BookOpen,
-  Truck
+  Truck,
+  X
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
 
-export default function ClientDashboard() {
+interface ClientDashboardProps {
+  onPageChange?: (page: string) => void;
+}
+
+export default function ClientDashboard({ onPageChange }: ClientDashboardProps) {
   const { profile } = useAuth();
   const [appointments, setAppointments] = useState<ClientAppointment[]>([]);
   const [orders, setOrders] = useState<ClientOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [bookingForm, setBookingForm] = useState({
+    serviceType: 'Consultation Agronomique',
+    date: '',
+    time: '',
+    notes: ''
+  });
+  const [bookingSubmitLoading, setBookingSubmitLoading] = useState(false);
+
+  const handleCreateBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    setBookingSubmitLoading(true);
+    try {
+      const newAppoint = {
+        clientId: profile.id,
+        clientName: profile.fullName,
+        serviceType: bookingForm.serviceType,
+        date: `${bookingForm.date}T${bookingForm.time || '10:00'}:00`,
+        status: 'pending',
+        notes: bookingForm.notes,
+        createdAt: Date.now()
+      };
+      const docRef = await addDoc(collection(db, 'client_appointments'), newAppoint);
+      setAppointments(prev => [{ id: docRef.id, ...newAppoint } as ClientAppointment, ...prev]);
+      setIsBookingModalOpen(false);
+      setBookingForm({
+        serviceType: 'Consultation Agronomique',
+        date: '',
+        time: '',
+        notes: ''
+      });
+    } catch (err) {
+      console.error("Erreur de création de rendez-vous:", err);
+    } finally {
+      setBookingSubmitLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!profile) return;
@@ -174,7 +217,10 @@ export default function ClientDashboard() {
                  )) : (
                    <p className="text-center text-[10px] font-bold text-slate-400 py-4 italic">Aucun rendez-vous prévu.</p>
                  )}
-                 <button className="w-full py-3 text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:bg-emerald-50 rounded-xl transition-all">
+                 <button 
+                    onClick={() => setIsBookingModalOpen(true)}
+                    className="w-full py-3 text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:bg-emerald-50 rounded-xl transition-all"
+                 >
                     Prendre un rendez-vous
                  </button>
               </div>
@@ -188,6 +234,14 @@ export default function ClientDashboard() {
               {services.map((svc) => (
                  <motion.div 
                   key={svc.id}
+                  onClick={() => {
+                    if (onPageChange) {
+                      if (svc.id === 'agriculture') onPageChange('client-agriculture');
+                      else if (svc.id === 'health') onPageChange('client-health');
+                      else if (svc.id === 'education') onPageChange('client-education');
+                      else if (svc.id === 'commerce') onPageChange('client-commerce');
+                    }
+                  }}
                   whileHover={{ y: -5 }}
                   className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-none transition-all flex flex-col justify-between group cursor-pointer"
                  >
@@ -253,8 +307,13 @@ export default function ClientDashboard() {
                       <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
                          <ShoppingBag className="text-slate-200" size={24} />
                       </div>
-                      <p className="text-xs font-black text-slate-300 uppercase tracking-[0.2em]">Aucune commande trouvée</p>
-                      <button className="mt-4 px-6 py-3 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Boutique RIBERJO</button>
+                                <p className="text-xs font-black text-slate-300 uppercase tracking-[0.2em]">Aucune commande trouvée</p>
+                      <button 
+                        onClick={() => onPageChange?.('client-commerce')}
+                        className="mt-4 px-6 py-3 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl"
+                      >
+                        Boutique RIBERJO
+                      </button>
                    </div>
                  )}
               </div>
@@ -272,10 +331,95 @@ export default function ClientDashboard() {
             <h3 className="text-2xl font-black uppercase tracking-tight mb-2">Besoin d'assistance ?</h3>
             <p className="text-white/80 font-medium">Nos experts dans chaque département sont là pour vous accompagner 24h/24.</p>
          </div>
-         <button className="relative z-10 px-8 py-5 bg-white text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 transition-all shadow-xl">
+         <button 
+           onClick={() => onPageChange?.('client-chat')}
+           className="relative z-10 px-8 py-5 bg-white text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 transition-all shadow-xl"
+         >
             Contacter le support
          </button>
       </div>
+
+      {/* Appointment Booking Modal */}
+      {isBookingModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 font-sans text-slate-900 dark:text-white">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-lg p-10 border border-slate-100 dark:border-slate-800 shadow-2xl relative"
+          >
+            <button 
+              onClick={() => setIsBookingModalOpen(false)}
+              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              <X size={20} />
+            </button>
+            
+            <div className="mb-8">
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight mb-2">Prendre un rendez-vous</h3>
+              <p className="text-slate-500 dark:text-slate-400 font-medium text-xs">Planifiez une rencontre avec nos spécialistes.</p>
+            </div>
+
+            <form onSubmit={handleCreateBooking} className="space-y-6">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">DÉPARTEMENT / SERVICE</label>
+                <select 
+                  value={bookingForm.serviceType}
+                  onChange={(e) => setBookingForm({ ...bookingForm, serviceType: e.target.value })}
+                  className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                >
+                  <option value="Consultation Agronomique">Secteur Agricole - Consultation Agronomique</option>
+                  <option value="Suivi Vétérinaire & Élevage">Secteur Élevage - Suivi Vétérinaire</option>
+                  <option value="Consultation Médicale">Secteur Santé - Consultation Médicale</option>
+                  <option value="Orientation Académique">Secteur Éducation - Inscription & Orientation universitaire</option>
+                  <option value="Conseil Logistique & Transport">Secteur Transport - Conseil Logistique</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">DATE DU RENDEZ-VOUS</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={bookingForm.date}
+                    onChange={(e) => setBookingForm({ ...bookingForm, date: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">HEURE DÉSIRÉE</label>
+                  <input 
+                    type="time" 
+                    required
+                    value={bookingForm.time}
+                    onChange={(e) => setBookingForm({ ...bookingForm, time: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">NOTES / DESCRIPTION</label>
+                <textarea 
+                  rows={3}
+                  value={bookingForm.notes}
+                  onChange={(e) => setBookingForm({ ...bookingForm, notes: e.target.value })}
+                  placeholder="Expliquez brièvement votre besoin..."
+                  className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white resize-none"
+                />
+              </div>
+
+              <button 
+                type="submit"
+                disabled={bookingSubmitLoading}
+                className="w-full py-5 bg-emerald-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-600/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                {bookingSubmitLoading ? 'Envoi...' : 'Confirmer le Rendez-vous'}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

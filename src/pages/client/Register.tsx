@@ -37,15 +37,52 @@ export default function ClientRegister() {
     photoUrl: ''
   });
 
+  const handleGoToStep2 = async () => {
+    setError(null);
+    if (!formData.fullName.trim()) {
+      setError("Le nom complet est obligatoire.");
+      return;
+    }
+    if (!formData.phone.trim()) {
+      setError("Le numéro de téléphone est obligatoire.");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!formData.email.trim() || !emailRegex.test(formData.email.trim())) {
+      setError("Veuillez saisir une adresse email valide.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', formData.email.trim().toLowerCase()));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        setError("Cet email est déjà utilisé.");
+        return;
+      }
+      setStep(2);
+    } catch (err: any) {
+      console.error(err);
+      setError("Une erreur de vérification est survenue. Veuillez réessayer.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
+      const emailLower = formData.email.trim().toLowerCase();
+
       // 1. Check if email already exists
       const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', formData.email));
+      const q = query(usersRef, where('email', '==', emailLower));
       const querySnapshot = await getDocs(q);
       
       if (!querySnapshot.empty) {
@@ -66,7 +103,7 @@ export default function ClientRegister() {
       const qrCodeValue = `${window.location.origin}/verify/${clientId}`;
 
       // 3. Create Auth User
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, emailLower, password);
       const authUid = userCredential.user.uid;
 
       // 4. Create Profile
@@ -74,7 +111,7 @@ export default function ClientRegister() {
         id: clientId,
         fullName: formData.fullName,
         phone: formData.phone,
-        email: formData.email,
+        email: emailLower,
         address: formData.address,
         gender: formData.gender,
         profession: formData.profession,
@@ -93,7 +130,7 @@ export default function ClientRegister() {
       const erpProfile: UserProfile & { password?: string } = {
         id: clientId,
         fullName: formData.fullName,
-        email: formData.email,
+        email: emailLower,
         role: 'CLIENT',
         departmentId: 'CLIENT', 
         matricule: clientId,
@@ -116,7 +153,13 @@ export default function ClientRegister() {
       setStep(3);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Une erreur est survenue lors de l'inscription.");
+      let errMsg = "Une erreur est survenue lors de l'inscription.";
+      if (err.code === 'auth/email-already-in-use' || err.message === 'Cet email est déjà utilisé.') {
+        errMsg = "Cet email est déjà utilisé.";
+      } else if (err.message) {
+        errMsg = err.message;
+      }
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -240,11 +283,14 @@ export default function ClientRegister() {
                    </div>
                 </div>
 
+                {error && <p className="text-xs font-bold text-red-500 text-center mb-4">{error}</p>}
+
                 <button 
-                  onClick={() => setStep(2)}
-                  className="w-full py-5 bg-brand text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-brand/20 hover:-translate-y-1 transition-all flex items-center justify-center gap-3"
+                  onClick={handleGoToStep2}
+                  disabled={loading}
+                  className="w-full py-5 bg-brand text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-brand/20 hover:-translate-y-1 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                 >
-                  Continuer <ArrowRight size={18} />
+                  {loading ? "Vérification..." : <>Continuer <ArrowRight size={18} /></>}
                 </button>
               </motion.div>
             ) : step === 2 ? (

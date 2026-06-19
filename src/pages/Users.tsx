@@ -103,6 +103,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
     role: "USER" as any,
     baseSalary: 150,
     password: "",
+    gender: "M" as 'M' | 'F',
   });
 
   const canAddWorker =
@@ -201,7 +202,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
           phone: formData.phone || "000000000",
           email: formData.email,
           address: formData.address || "Adresse Non Spécifiée",
-          gender: "M",
+          gender: formData.gender || "M",
           profession: "Client",
           nationality: "Congolaise (RDC)",
           type: "STANDARD",
@@ -238,6 +239,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
         role: "USER" as any,
         baseSalary: 150,
         password: "",
+        gender: "M" as 'M' | 'F',
       });
       
       fetchData();
@@ -349,6 +351,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
       serviceId: user.serviceId || "",
       baseSalary: user.baseSalary || 150,
       password: user.password || "",
+      gender: user.gender || "M",
     });
     setIsDetailModalOpen(true);
   };
@@ -580,6 +583,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                   role: defaultRole,
                   baseSalary: 150,
                   password: "",
+                  gender: "M" as 'M' | 'F',
                 });
                 setIsModalOpen(true);
               }}
@@ -1278,6 +1282,22 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                 </div>
                 <div>
                   <label className="block text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mb-2">
+                    Sexe / Genre
+                  </label>
+                  <select
+                    required
+                    value={formData.gender || "M"}
+                    onChange={(e) =>
+                      setFormData({ ...formData, gender: e.target.value as 'M' | 'F' })
+                    }
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
+                  >
+                    <option value="M">Masculin</option>
+                    <option value="F">Féminin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mb-2">
                     Année Recrutement
                   </label>
                   <input
@@ -1518,6 +1538,14 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                     </p>
                     <p className="font-bold text-slate-700 dark:text-slate-300 italic">
                       Année {selectedUser.recruitmentYear || "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">
+                      Sexe / Genre
+                    </p>
+                    <p className="font-bold text-slate-700 dark:text-slate-300">
+                      {selectedUser.gender === "F" ? "Féminin (F)" : "Masculin (M)"}
                     </p>
                   </div>
                   <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -1819,6 +1847,27 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                         }}
                         className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">
+                        Sexe / Genre
+                      </label>
+                      <select
+                        disabled={
+                          !(
+                            profile?.role === "ADMIN" ||
+                            profile?.role === "SUPER_ADMIN"
+                          )
+                        }
+                        value={editData.gender || "M"}
+                        onChange={(e) =>
+                          setEditData({ ...editData, gender: e.target.value as 'M' | 'F' })
+                        }
+                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                      >
+                        <option value="M">Masculin</option>
+                        <option value="F">Féminin</option>
+                      </select>
                     </div>
                   </div>
 

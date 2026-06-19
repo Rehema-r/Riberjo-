@@ -20,6 +20,43 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const getChatDisplayName = (chat: ChatType) => {
+    if (chat.type === 'group') return chat.name;
+    const partnerId = chat.participants?.find((p: string) => p !== profile?.id);
+    const partner = users.find((u) => u.id === partnerId);
+    return partner ? partner.fullName : chat.name;
+  };
+
+  const handleSelectUser = async (targetUser: UserProfile) => {
+    if (!profile) return;
+    try {
+      const chatsRef = collection(db, 'chats');
+      const q = query(chatsRef, where('type', '==', 'direct'), where('participants', 'array-contains', profile.id));
+      const snap = await getDocs(q);
+      const existingChatDoc = snap.docs.find((doc) => {
+        const data = doc.data();
+        return data.participants && data.participants.includes(targetUser.id);
+      });
+
+      if (existingChatDoc) {
+        setActiveChat({ id: existingChatDoc.id, ...existingChatDoc.data() } as ChatType);
+      } else {
+        const newChatId = `direct_${profile.id}_${targetUser.id}`;
+        const newChat: ChatType = {
+          id: newChatId,
+          name: targetUser.fullName,
+          type: 'direct' as 'direct',
+          participants: [profile.id, targetUser.id],
+          updatedAt: Date.now(),
+        };
+        await setDoc(doc(db, 'chats', newChatId), newChat);
+        setActiveChat(newChat);
+      }
+    } catch (err) {
+      console.error("Erreur de sélection du membre direct :", err);
+    }
+  };
+
   useEffect(() => {
     if (!profile) return;
 
@@ -190,23 +227,33 @@ export default function Chat() {
 
            <div className="mt-8">
              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 mb-2">Membres Directs</p>
-             {users.filter(u => u.id !== profile?.id).map(user => (
-               <button
-                 key={user.id}
-                 className={`w-full flex items-center gap-3 p-3 rounded-2xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group`}
-               >
-                 <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700 group-hover:text-slate-600 dark:group-hover:text-slate-300 shrink-0">
-                   <UserIcon size={18} />
-                 </div>
-                 <div className="text-left overflow-hidden">
-                   <p className="text-sm font-bold truncate tracking-tight text-slate-900 dark:text-slate-100">{user.fullName}</p>
-                   <div className="flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
-                      <p className="text-[10px] text-slate-400">En ligne</p>
+             {users.filter(u => u.id !== profile?.id).map(user => {
+               const isSelected = activeChat?.type === 'direct' && activeChat.participants?.includes(user.id);
+               return (
+                 <button
+                   key={user.id}
+                   onClick={() => handleSelectUser(user)}
+                   className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all group ${
+                     isSelected 
+                       ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 shadow-sm shadow-emerald-100 dark:shadow-none' 
+                       : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                   }`}
+                 >
+                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                     isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                   }`}>
+                     <UserIcon size={18} />
                    </div>
-                 </div>
-               </button>
-             ))}
+                   <div className="text-left overflow-hidden">
+                     <p className="text-sm font-bold truncate tracking-tight text-slate-900 dark:text-slate-100">{user.fullName}</p>
+                     <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
+                        <p className="text-[10px] text-slate-400">En ligne</p>
+                     </div>
+                   </div>
+                 </button>
+               );
+             })}
            </div>
         </div>
       </div>
@@ -222,7 +269,7 @@ export default function Chat() {
                      {activeChat.type === 'group' ? <Hash size={20} /> : <UserIcon size={20} />}
                   </div>
                   <div>
-                    <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-tight">{activeChat.name}</h3>
+                    <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-tight">{getChatDisplayName(activeChat)}</h3>
                     <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold tracking-widest italic uppercase">
                       {activeChat.type === 'group' ? "Canal de discussion d'entreprise" : "Discussion Privée"}
                     </p>

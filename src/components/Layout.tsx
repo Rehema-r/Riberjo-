@@ -208,7 +208,7 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
       <motion.aside 
         initial={false}
         animate={{ 
-          width: isSidebarOpen ? 280 : 80,
+          width: windowWidth < 1024 ? 280 : (isSidebarOpen ? 280 : 80),
           x: isMobileMenuOpen ? 0 : (windowWidth < 1024 ? -280 : 0)
         }}
         className={`bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-50 fixed inset-y-0 left-0 lg:relative transition-[width,transform,background-color] duration-300 ease-in-out`}

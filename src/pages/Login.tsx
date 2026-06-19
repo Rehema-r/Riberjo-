@@ -325,7 +325,7 @@ export default function Login() {
           </div>
 
           <div className="mb-10 text-center md:text-left">
-            <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-3 uppercase tracking-tighter">Connexion</h3>
+            <h3 className="text-4xl font-black text-slate-900 dark:text-white mb-3 uppercase tracking-tighter">CONNEXION</h3>
             <p className="text-slate-500 dark:text-slate-400 font-medium">Accédez à votre espace ERP ou Client RIBERJO.</p>
           </div>
 
@@ -359,16 +359,7 @@ export default function Login() {
             </div>
 
             <div>
-              <div className="flex justify-between items-center mb-3">
-                <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Mot de Passe</label>
-                <button
-                  type="button"
-                  onClick={() => setShowResetModal(true)}
-                  className="text-[10px] font-black uppercase tracking-[0.1em] text-brand hover:underline focus:outline-none transition-colors"
-                >
-                  Mot de passe oublié ?
-                </button>
-              </div>
+              <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mb-3">Mot de Passe</label>
               <div className="relative group">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within:text-brand transition-colors">
                   <ShieldCheck size={20} />
