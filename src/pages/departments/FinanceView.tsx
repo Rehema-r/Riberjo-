@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { CreditCard, ArrowUpRight, ArrowDownLeft, DollarSign, Wallet, FileCheck, Search, Filter, PieChart, BarChart3 } from 'lucide-react';
-import { collection, query, orderBy, onSnapshot, limit, addDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, limit, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { FinanceTransaction } from '../../types';
@@ -9,6 +9,7 @@ import { motion } from 'motion/react';
 
 export default function FinanceView({ activeSpace = 'USER' }: { activeSpace?: 'USER' | 'SUPER_USER' | 'ADMIN' }) {
   const { profile } = useAuth();
+  const isDG = profile?.role === 'SUPER_ADMIN' || profile?.matricule === '26/RBJ-DG-01';
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTransaction, setNewTransaction] = useState({
@@ -96,6 +97,89 @@ export default function FinanceView({ activeSpace = 'USER' }: { activeSpace?: 'U
       setNewTransaction({ type: 'income', category: 'Vente', amount: 0, description: '', status: 'pending' });
     } catch (err) {
       console.error("Error adding transaction:", err);
+    }
+  };
+
+  const handleValidateClaim = async (claimId: string, claimData: any) => {
+    if (!profile) return;
+    try {
+      // 1. Update status
+      await updateDoc(doc(db, 'finance_claims', claimId), {
+        status: 'validated'
+      });
+      
+      // 2. Insert transaction
+      await addDoc(collection(db, 'finance_transactions'), {
+        type: 'expense',
+        category: claimData.category || 'Maintenance',
+        amount: claimData.amount,
+        description: `Note de frais réglée à ${claimData.authorName} : ${claimData.description}`,
+        authorId: profile.id,
+        authorName: profile.fullName,
+        status: 'validated',
+        createdAt: Date.now()
+      });
+      
+      alert("Note de frais validée et payée avec succès !");
+    } catch (err) {
+      console.error("Error validating claim:", err);
+      alert("Erreur lors de la validation.");
+    }
+  };
+
+  const handleFinancePreValidateClaim = async (claimId: string) => {
+    if (!profile) return;
+    try {
+      await updateDoc(doc(db, 'finance_claims', claimId), {
+        status: 'pending_dg_approval',
+        financeValidatedBy: profile.fullName,
+        financeValidatedAt: Date.now()
+      });
+      alert("Note de frais supérieure à 1000$ pré-validée par la finance ! En attente de l'approbation finale du DG.");
+    } catch (err) {
+      console.error("Error pre-validating claim:", err);
+      alert("Erreur lors de la pré-validation.");
+    }
+  };
+
+  const handleDGApproveClaim = async (claimId: string, claimData: any) => {
+    if (!profile) return;
+    try {
+      // 1. Update status
+      await updateDoc(doc(db, 'finance_claims', claimId), {
+        status: 'validated',
+        dgApprovedBy: profile.fullName,
+        dgApprovedAt: Date.now()
+      });
+      
+      // 2. Insert transaction
+      await addDoc(collection(db, 'finance_transactions'), {
+        type: 'expense',
+        category: claimData.category || 'Maintenance',
+        amount: claimData.amount,
+        description: `Note de frais réglée à ${claimData.authorName} [Approuvé par DG] : ${claimData.description}`,
+        authorId: profile.id,
+        authorName: profile.fullName,
+        status: 'validated',
+        createdAt: Date.now()
+      });
+      
+      alert(`Note de frais de $${claimData.amount} officiellement approuvée par le DG & décaissée avec de la caisse !`);
+    } catch (err) {
+      console.error("Error approving claim by DG:", err);
+      alert("Erreur lors de l'approbation du DG.");
+    }
+  };
+
+  const handleRejectClaim = async (claimId: string) => {
+    try {
+      await updateDoc(doc(db, 'finance_claims', claimId), {
+        status: 'rejected'
+      });
+      alert("Note de frais rejetée.");
+    } catch (err) {
+      console.error("Error rejecting claim:", err);
+      alert("Erreur lors du rejet.");
     }
   };
 
@@ -219,9 +303,12 @@ export default function FinanceView({ activeSpace = 'USER' }: { activeSpace?: 'U
                             <div className="flex justify-center">
                               <span className={`text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${
                                 c.status === 'validated' ? 'bg-emerald-100 text-emerald-700' :
-                                c.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                                c.status === 'rejected' ? 'bg-red-100 text-red-700' : 
+                                c.status === 'pending_dg_approval' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'
                               }`}>
-                                {c.status === 'validated' ? 'Payé' : c.status === 'rejected' ? 'Refusé' : 'En attente'}
+                                {c.status === 'validated' ? 'Payé' : 
+                                 c.status === 'rejected' ? 'Refusé' : 
+                                 c.status === 'pending_dg_approval' ? 'Visa Finance (Attente DG)' : 'En attente'}
                               </span>
                             </div>
                           </td>
@@ -478,21 +565,78 @@ export default function FinanceView({ activeSpace = 'USER' }: { activeSpace?: 'U
             <div className="relative z-10">
               <FileCheck className="text-emerald-400 mb-6" size={32} />
               <h3 className="text-lg font-black uppercase tracking-tight mb-4">Validations Requises</h3>
-              <div className="space-y-3">
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors cursor-pointer group">
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Urgent</span>
-                    <span className="text-[10px] font-bold">$1,250</span>
-                  </div>
-                  <p className="text-[11px] font-medium group-hover:text-emerald-400 transition-colors">Achat Engrais Dept. Ferme</p>
-                </div>
-                <div className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors cursor-pointer group">
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Standard</span>
-                    <span className="text-[10px] font-bold">$450</span>
-                  </div>
-                  <p className="text-[11px] font-medium group-hover:text-emerald-400 transition-colors">Fournitures Médicales</p>
-                </div>
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                {claimsList.filter(c => c.status === 'pending' || c.status === 'pending_dg_approval').length === 0 ? (
+                  <p className="text-center py-6 text-slate-400 text-xs font-bold uppercase tracking-wider">Aucune demande de caisse en attente</p>
+                ) : (
+                  claimsList.filter(c => c.status === 'pending' || c.status === 'pending_dg_approval').map((c) => (
+                    <div key={c.id} className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/20 transition-all font-sans relative">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
+                          {c.category}
+                        </span>
+                        <span className="text-sm font-black text-white">${c.amount}</span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-100">{c.description}</p>
+                      <p className="text-[9px] text-slate-400 font-medium mt-1 uppercase">Demandeur : {c.authorName}</p>
+
+                      {c.status === 'pending_dg_approval' && (
+                        <div className="mt-2 px-2.5 py-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg text-[8px] font-black uppercase tracking-wider flex items-center gap-1 font-mono">
+                          ⚠️ Attente Approbation DG (&gt;1000$)
+                        </div>
+                      )}
+
+                      {c.status === 'pending' && c.amount > 1000 && (
+                        <div className="mt-2 px-2.5 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg text-[8px] font-black uppercase tracking-wider flex items-center gap-1 font-mono">
+                          🏷️ Dépense &gt; 1000$ • Double Validation Requise
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2 mt-3 pt-2 border-t border-white/5">
+                        {c.status === 'pending' ? (
+                          c.amount <= 1000 ? (
+                            <button
+                              onClick={() => handleValidateClaim(c.id, c)}
+                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors"
+                            >
+                              Décaisser
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleFinancePreValidateClaim(c.id)}
+                              className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors"
+                            >
+                              Accorder Visa Finance
+                            </button>
+                          )
+                        ) : (
+                          // status is pending_dg_approval
+                          isDG ? (
+                            <button
+                              onClick={() => handleDGApproveClaim(c.id, c)}
+                              className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors ring-2 ring-indigo-400/55"
+                            >
+                              👑 Approuver (DG)
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="flex-1 py-1.5 bg-slate-700 text-slate-400 rounded-lg font-black text-[8px] uppercase tracking-wider cursor-not-allowed"
+                            >
+                              Attente Décision DG
+                            </button>
+                          )
+                        )}
+                        <button
+                          onClick={() => handleRejectClaim(c.id)}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-black text-[9px] uppercase tracking-wider transition-colors"
+                        >
+                          Refuser
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
             <div className="absolute bottom-0 right-0 -mb-8 -mr-8 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl"></div>

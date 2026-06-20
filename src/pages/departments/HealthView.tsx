@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Stethoscope, Heart, Users, Activity, Plus, ShieldAlert, History, Search, ArrowUpDown, Box, HeartPulse, ListTodo, FolderHeart, Send, Thermometer } from 'lucide-react';
-import { collection, addDoc, query, orderBy, onSnapshot, limit, updateDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, limit, updateDoc, doc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { MedicalRecord, InventoryItem, InventoryTransaction } from '../../types';
@@ -72,6 +72,16 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
   const [stockMoveQty, setStockMoveQty] = useState<number>(0);
   const [stockMoveDescription, setStockMoveDescription] = useState<string>('');
 
+  // Death Registry & Verification states (Directoire / Direction)
+  const [deathRecords, setDeathRecords] = useState<any[]>([]);
+  const [deathSearchName, setDeathSearchName] = useState('');
+  const [deathVerifiedRecord, setDeathVerifiedRecord] = useState<MedicalRecord | null | 'NOT_FOUND'>(null);
+  const [deathDate, setDeathDate] = useState('');
+  const [deathCause, setDeathCause] = useState('');
+  const [deathNotes, setDeathNotes] = useState('');
+  const [deathSubmitLoading, setDeathSubmitLoading] = useState(false);
+  const [errorDeath, setErrorDeath] = useState<string | null>(null);
+
   useEffect(() => {
     const q = query(
       collection(db, 'medical_records'),
@@ -98,9 +108,21 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
       handleFirestoreError(error, OperationType.LIST, 'medical_vitals');
     });
 
+    const qD = query(
+      collection(db, 'clinical_deaths'),
+      orderBy('createdAt', 'desc'),
+      limit(30)
+    );
+    const unsubscribeD = onSnapshot(qD, (snapshot) => {
+      setDeathRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.warn("HealthView clinical_deaths onSnapshot operates in local cache mode:", error.message);
+    });
+
     return () => {
       unsubscribe();
       unsubscribeV();
+      unsubscribeD();
     };
   }, []);
 
@@ -244,6 +266,82 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
       setNewVital({ patientName: '', temp: 36.8, bp: '12/8', weight: 70, pulse: 75 });
     } catch (err) {
       console.error("Error adding vitals:", err);
+    }
+  };
+
+  const handleCheckConsultation = async () => {
+    if (!deathSearchName.trim()) return;
+    setErrorDeath(null);
+    setDeathVerifiedRecord(null);
+    
+    // Search local records state first (case-insensitive)
+    const matchingLocal = records.find(r => 
+      r.patientName.trim().toLowerCase() === deathSearchName.trim().toLowerCase()
+    );
+    
+    if (matchingLocal) {
+      setDeathVerifiedRecord(matchingLocal);
+      return;
+    }
+    
+    // Query medical_records collection in Firestore to be absolutely sure
+    try {
+      const q = query(
+        collection(db, 'medical_records'),
+        where('patientName', '==', deathSearchName.trim())
+      );
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        const foundDoc = snapshot.docs[0];
+        const data = foundDoc.data() as MedicalRecord;
+        setDeathVerifiedRecord({ id: foundDoc.id, ...data });
+      } else {
+        setDeathVerifiedRecord('NOT_FOUND');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrorDeath("Une erreur est survenue lors de la vérification de la consultation.");
+      setDeathVerifiedRecord('NOT_FOUND');
+    }
+  };
+
+  const handleRegisterDeath = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    if (!deathVerifiedRecord || deathVerifiedRecord === 'NOT_FOUND') {
+      alert("Erreur: Vous n'avez pas le droit d'enregistrer ce décès.");
+      return;
+    }
+    
+    setDeathSubmitLoading(true);
+    try {
+      await addDoc(collection(db, 'clinical_deaths'), {
+        patientName: deathSearchName.trim(),
+        consultationId: deathVerifiedRecord.id,
+        consultationType: deathVerifiedRecord.consultationType,
+        consultationDate: deathVerifiedRecord.createdAt,
+        diagnosis: deathVerifiedRecord.diagnosis,
+        practitionerName: deathVerifiedRecord.practitionerName || 'Inconnu',
+        deathDate: deathDate,
+        reason: deathCause || 'Non spécifiée',
+        notes: deathNotes || '',
+        declaredBy: profile.fullName,
+        declaredByRole: profile.role,
+        createdAt: Date.now()
+      });
+      
+      // Reset inputs
+      setDeathSearchName('');
+      setDeathVerifiedRecord(null);
+      setDeathDate('');
+      setDeathCause('');
+      setDeathNotes('');
+      alert("Décès enregistré avec succès et répertorié dans le registre de fin de vie !");
+    } catch (err) {
+      console.error("Error registering death:", err);
+      alert("Une erreur est survenue lors de l'enregistrement.");
+    } finally {
+      setDeathSubmitLoading(false);
     }
   };
 
@@ -590,6 +688,195 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Section Traçabilité & Registre des Décès (Direction) */}
+          <div className="mt-8 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-slate-50 dark:border-slate-800 border-dashed">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                  <span className="p-1.5 bg-red-500/10 text-red-650 rounded-lg">💀</span> Contrôle & Traçabilité des Décès (Directoire)
+                </h3>
+                <p className="text-xs text-slate-500 font-medium font-sans mt-0.5">
+                  Conformément à la politique clinique, seul le Directeur peut tracer un décès à condition que le patient ait été préalablement consulté.
+                </p>
+              </div>
+              <div className="px-4 py-2 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl flex items-center gap-2 text-red-700 dark:text-red-450 font-bold text-[10px] uppercase tracking-wider font-mono">
+                🛡️ Espace Réservé : Direction Générale
+              </div>
+            </div>
+
+            {/* If user is NOT a director, we strictly display "sinon il n'a pas le droit" */}
+            {!(profile?.role === 'ADMIN' || profile?.role === 'BOARD_MEMBER' || profile?.role === 'SUPER_ADMIN') ? (
+              <div className="py-12 px-6 text-center max-w-2xl mx-auto space-y-4">
+                <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/20 text-amber-500 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+                  <ShieldAlert size={32} />
+                </div>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Accès Non Autorisé ("Sinon il n'a pas droit")</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-sans font-medium font-mono">
+                  Vous n'êtes pas connecté en tant que <b>Directeur</b> ou membre du Directoire. 
+                  Conformément au protocole de l'établissement, seuls les directeurs ont le droit de tracer ou d'enregistrer des décès après validation du dossier de consultation clinique du patient.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-8">
+                {/* Search & Verification panel */}
+                <div className="space-y-6">
+                  <div className="p-6 bg-slate-50 dark:bg-slate-800/30 rounded-3xl border border-slate-100/50 dark:border-slate-800 space-y-4">
+                    <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                      <span>🔍</span> 1. Vérification Obligatoire de la Consultation
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-sans font-medium leading-relaxed">
+                      Saisissez le nom exact du patient pour rechercher ses antécédents de consultation clinique. Sans consultation préexistante, le système bloquera l'enregistrement.
+                    </p>
+
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Saisir le nom complet du patient..." 
+                        value={deathSearchName}
+                        onChange={(e) => {
+                          setDeathSearchName(e.target.value);
+                          setDeathVerifiedRecord(null);
+                        }}
+                        className="flex-1 px-4 py-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCheckConsultation}
+                        className="px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl transition"
+                      >
+                        Vérifier
+                      </button>
+                    </div>
+
+                    {errorDeath && (
+                      <p className="text-[10px] font-bold text-red-500">{errorDeath}</p>
+                    )}
+
+                    {/* Results / Right status */}
+                    {deathVerifiedRecord === 'NOT_FOUND' && (
+                      <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-150 dark:border-red-500/20 rounded-2xl space-y-2 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2 text-red-700 dark:text-red-400 font-mono text-[10px] font-black uppercase">
+                          <ShieldAlert size={14} /> AUCUNE CONSULTATION - TRACÉ INTERDIT !
+                        </div>
+                        <p className="text-[11px] text-red-900/75 dark:text-red-300 font-sans font-medium leading-relaxed">
+                          Ce patient n'a jamais été consulté dans notre établissement. <b>Le Directeur n'a pas le droit</b> de tracer de décès pour ce patient car aucun dossier clinique n'est associé ("Sinon il n'a pas de droit").
+                        </p>
+                      </div>
+                    )}
+
+                    {deathVerifiedRecord && deathVerifiedRecord !== 'NOT_FOUND' && (
+                      <div className="p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-150 dark:border-emerald-500/20 rounded-2xl space-y-2 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-mono text-[10px] font-black uppercase">
+                          <FolderHeart size={14} className="text-emerald-500" /> DOSSIER VALIDÉ - AUTORISÉ !
+                        </div>
+                        <p className="text-[11px] text-emerald-950 dark:text-emerald-300 font-sans font-medium">
+                          Patient consulté avec succès ! Vous disposez du droit légal d'enregistrer et de tracer le décès clinique.
+                        </p>
+                        <div className="mt-2 text-[10px] bg-white dark:bg-slate-900/50 p-3 rounded-xl border border-emerald-100 dark:border-emerald-500/10 text-slate-600 dark:text-slate-300 space-y-1 font-mono">
+                          <p>🩺 Consultation ID: <b>{deathVerifiedRecord.id.substring(0, 8)}</b></p>
+                          <p>📋 Diagnostic: <b>"{deathVerifiedRecord.diagnosis}"</b></p>
+                          <p>👤 Praticien de garde: <b>{deathVerifiedRecord.practitionerName}</b></p>
+                          <p>📅 Date: <b>{new Date(deathVerifiedRecord.createdAt).toLocaleDateString()}</b></p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {deathVerifiedRecord && deathVerifiedRecord !== 'NOT_FOUND' && (
+                    <form onSubmit={handleRegisterDeath} className="p-6 bg-slate-50 dark:bg-slate-800/30 rounded-3xl border border-slate-100/50 dark:border-slate-800 space-y-4 animate-in slide-in-from-bottom duration-200">
+                      <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider font-mono">
+                        📝 2. Formulaire Clinique de Traçabilité
+                      </h4>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Date du Décès</label>
+                          <input 
+                            type="date" 
+                            required
+                            value={deathDate}
+                            onChange={(e) => setDeathDate(e.target.value)}
+                            className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Cause présumée</label>
+                          <input 
+                            type="text" 
+                            placeholder="Anémie, arrêt cardiaque..." 
+                            required
+                            value={deathCause}
+                            onChange={(e) => setDeathCause(e.target.value)}
+                            className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Indications sur la traçabilité</label>
+                        <textarea 
+                          rows={2}
+                          placeholder="Notez toutes les circonstances nécessaires pour la direction..."
+                          value={deathNotes}
+                          onChange={(e) => setDeathNotes(e.target.value)}
+                          className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-xl text-xs focus:outline-none resize-none"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={deathSubmitLoading}
+                        className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl transition disabled:opacity-50 shadow-lg"
+                      >
+                        {deathSubmitLoading ? "Enregistrement..." : "Enregistrer de façon conforme"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                {/* Registry View log panel */}
+                <div className="bg-slate-50 dark:bg-slate-950 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 flex flex-col min-h-[300px]">
+                  <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2 font-mono">
+                    <span className="text-red-500">📋</span> Registre Global des Décès Tracés Conformes
+                  </h4>
+
+                  <div className="flex-1 space-y-4 max-h-[440px] overflow-y-auto pr-1">
+                    {deathRecords.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400 text-xs font-medium border-2 border-dashed border-slate-150 dark:border-slate-800 rounded-2xl">
+                        <p>Aucun décès n'est actuellement répertorié dans ce registre.</p>
+                      </div>
+                    ) : (
+                      deathRecords.map(rec => (
+                        <div key={rec.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100/50 dark:border-slate-800 relative z-10 shadow-sm animate-in fade-in duration-200">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="text-xs font-black text-red-650 uppercase tracking-tight">{rec.patientName}</p>
+                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Décès: <b>{new Date(rec.deathDate).toLocaleDateString()}</b></p>
+                            </div>
+                            <span className="text-[8px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded uppercase font-bold">
+                              Verifié
+                            </span>
+                          </div>
+
+                          <div className="mt-3 text-[10px] text-slate-500 dark:text-slate-400 space-y-1 bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-100/50 dark:border-slate-700/50">
+                            <p>🩺 Cause: <b className="text-slate-800 dark:text-slate-200">{rec.reason}</b></p>
+                            <p>📋 Consulté: <b>{rec.consultationType}</b> (Diagn: "{rec.diagnosis}") par Dr. {rec.practitionerName}</p>
+                            {rec.notes && <p className="italic">" {rec.notes} "</p>}
+                          </div>
+                          
+                          <div className="mt-2 border-t border-slate-100 dark:border-slate-800/40 pt-2 flex items-center justify-between text-[8px] text-slate-400 uppercase tracking-widest font-mono">
+                            <span>TRACE PAR: <b>{rec.declaredBy}</b></span>
+                            <span className="text-emerald-500 font-bold">✔ CONFORME</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </>
       ) : (
