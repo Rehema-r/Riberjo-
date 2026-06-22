@@ -30,6 +30,7 @@ import {
   Shield,
   FileText,
   User,
+  KeyRound,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
@@ -86,6 +87,12 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
     userId: string;
     fullName: string;
   } | null>(null);
+  const [resetPasswordConfirmation, setResetPasswordConfirmation] = useState<{
+    userId: string;
+    fullName: string;
+    matricule: string;
+  } | null>(null);
+  const [newCustomPassword, setNewCustomPassword] = useState("");
 
   const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'card'>('info');
   const [isExporting, setIsExporting] = useState(false);
@@ -410,6 +417,54 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
     } catch (err) {
       console.error(err);
       setShowToast({ show: true, message: "Erreur lors de la suppression de l'utilisateur." });
+      setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
+  const handleResetUserPassword = async (userId: string, customNewPassword?: string) => {
+    setIsUpdating(userId);
+    try {
+      const userDoc = users.find((u) => u.id === userId);
+      const randomPart = Math.floor(1000 + Math.random() * 9000);
+      const generatedPass = customNewPassword?.trim() || `Riberjo${randomPart}!`;
+
+      await updateDoc(doc(db, "users", userId), {
+        password: generatedPass,
+        passwordChanged: false
+      });
+
+      if (userDoc?.role === "CLIENT") {
+        await updateDoc(doc(db, "clients", userId), {
+          passwordChanged: false
+        });
+      }
+
+      await notificationService.notify(
+        userId,
+        "Mot de Passe Réinitialisé",
+        `Votre mot de passe a été réinitialisé par la Direction Générale. Nouveau : ${generatedPass}`,
+        "critical"
+      );
+
+      setResetPasswordConfirmation(null);
+      setNewCustomPassword("");
+      
+      if (selectedUser && selectedUser.id === userId) {
+        setSelectedUser({ ...selectedUser, password: generatedPass });
+      }
+
+      setCreationSuccess({
+        matricule: userDoc?.matricule || "",
+        password: generatedPass,
+        isReset: true
+      } as any);
+      
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      setShowToast({ show: true, message: "Erreur lors de la réinitialisation du mot de passe." });
       setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
     } finally {
       setIsUpdating(null);
@@ -975,6 +1030,21 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                         {profile?.role === "SUPER_ADMIN" && (
                           <button
                             onClick={() =>
+                              setResetPasswordConfirmation({
+                                userId: user.id,
+                                fullName: user.fullName,
+                                matricule: user.matricule
+                              })
+                            }
+                            className="p-2.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/5 rounded-xl transition-all"
+                            title="Réinitialiser le mot de passe"
+                          >
+                            <KeyRound size={16} />
+                          </button>
+                        )}
+                        {profile?.role === "SUPER_ADMIN" && (
+                          <button
+                            onClick={() =>
                               handleDeleteUser(user.id, user.fullName)
                             }
                             className="p-2.5 text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-500/5 rounded-xl transition-all"
@@ -1123,8 +1193,24 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                   {profile?.role === "SUPER_ADMIN" && (
                     <button
                       type="button"
+                      onClick={() =>
+                        setResetPasswordConfirmation({
+                          userId: user.id,
+                          fullName: user.fullName,
+                          matricule: user.matricule
+                        })
+                      }
+                      className="p-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all active:scale-95 flex items-center justify-center border border-indigo-500/10"
+                      title="Réinitialiser le mot de passe"
+                    >
+                      <KeyRound size={16} />
+                    </button>
+                  )}
+                  {profile?.role === "SUPER_ADMIN" && (
+                    <button
+                      type="button"
                       onClick={() => handleDeleteUser(user.id, user.fullName)}
-                      className="p-3 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl transition-all active:scale-95 flex items-center justify-center border border-red-500/10"
+                      className="p-3 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-650 dark:text-red-400 rounded-xl transition-all active:scale-95 flex items-center justify-center border border-red-500/10"
                       title="Supprimer"
                     >
                       <Trash2 size={16} />
@@ -1156,10 +1242,10 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                 <Check size={40} />
               </div>
               <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2 uppercase tracking-tight">
-                Utilisateur Créé !
+                {(creationSuccess as any).isReset ? "Mot de passe Réinitialisé !" : "Utilisateur Créé !"}
               </h2>
               <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">
-                Veuillez copier ces identifiants pour le collaborateur.
+                {(creationSuccess as any).isReset ? "Veuillez communiquer ces nouveaux accès à l'agent." : "Veuillez copier ces identifiants pour le collaborateur."}
               </p>
 
               <div className="space-y-4 mb-8 text-left">
@@ -1520,9 +1606,27 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                     <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">
                       Mot de Passe
                     </p>
-                    <p className="font-mono text-sm font-bold text-brand">
-                      {selectedUser.password || "••••••••"}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-mono text-sm font-bold text-brand">
+                        {selectedUser.password || "••••••••"}
+                      </p>
+                      {profile?.role === "SUPER_ADMIN" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setResetPasswordConfirmation({
+                              userId: selectedUser.id,
+                              fullName: selectedUser.fullName,
+                              matricule: selectedUser.matricule
+                            });
+                          }}
+                          className="px-2.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/25 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all"
+                          title="Réinitialiser"
+                        >
+                          Réinitialiser
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                     <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">
@@ -2229,6 +2333,74 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                   className="flex-grow flex-1 py-4 bg-red-600 hover:bg-red-500 text-white font-bold rounded-2xl shadow-xl shadow-red-900/20 active:scale-95 transition-all uppercase text-xs tracking-widest"
                 >
                   Supprimer
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {resetPasswordConfirmation && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setResetPasswordConfirmation(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800 p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-indigo-600 dark:text-indigo-400">
+                <KeyRound size={32} />
+              </div>
+              <h3 className="text-lg font-black text-slate-950 dark:text-white uppercase tracking-tight mb-2">
+                Réinitialisation de Mot de Passe
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 font-medium">
+                Vous allez réinitialiser le mot de passe pour l'agent{" "}
+                <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                  {resetPasswordConfirmation.fullName}
+                </span>{" "}
+                ({resetPasswordConfirmation.matricule}).
+              </p>
+
+              <div className="mb-6 text-left">
+                <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mb-2">
+                  Définir un mot de passe personnalisé (Optionnel)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Laisser vide pour générer aléatoirement"
+                  value={newCustomPassword}
+                  onChange={(e) => setNewCustomPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetPasswordConfirmation(null);
+                    setNewCustomPassword("");
+                  }}
+                  className="flex-grow flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-2xl active:scale-95 transition-all uppercase text-xs tracking-widest"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  disabled={isUpdating === resetPasswordConfirmation.userId}
+                  onClick={() => handleResetUserPassword(resetPasswordConfirmation.userId, newCustomPassword)}
+                  className="flex-grow flex-1 py-4 bg-indigo-600 hover:bg-indigo-550 text-white font-bold rounded-2xl shadow-xl shadow-indigo-900/20 active:scale-95 transition-all uppercase text-xs tracking-widest"
+                >
+                  {isUpdating === resetPasswordConfirmation.userId ? "En cours..." : "Réinitialiser"}
                 </button>
               </div>
             </motion.div>

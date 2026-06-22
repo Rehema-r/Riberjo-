@@ -26,11 +26,11 @@ export interface ClientAppointment {
   id: string;
   clientId: string;
   clientName: string;
-  serviceType: 'medical' | 'agronomical' | 'veterinary' | 'training' | 'logistics';
+  serviceType: string;
   specialistId?: string;
   specialistName?: string;
-  date: number;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  date: string | number;
+  status: string;
   notes?: string;
   createdAt: number;
 }
