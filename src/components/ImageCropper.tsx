@@ -154,7 +154,7 @@ export default function ImageCropper({
           </button>
         </div>
 
-        <div className="relative flex-1 bg-slate-50 dark:bg-slate-950 min-h-[300px] md:min-h-[400px]">
+        <div className="relative w-full h-[280px] sm:h-[320px] md:h-[350px] bg-slate-50 dark:bg-slate-950">
           <Cropper
             image={image}
             crop={crop}
@@ -169,7 +169,7 @@ export default function ImageCropper({
           />
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-5 md:p-6 space-y-4 md:space-y-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Zoom</span>
