@@ -55,6 +55,7 @@ import { notificationService } from "../services/notificationService";
 
 export default function Users({ initialActiveTab }: { initialActiveTab?: string }) {
   const { profile } = useAuth();
+  const isDGOrHR = profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER' || profile?.departmentId === '03';
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [roles, setRoles] = useState<RolePermission[]>([]);
@@ -378,32 +379,38 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
   };
 
   const handleDownloadCard = async () => {
-    if (!cardRef.current || !selectedUser) return;
+    const frontEl = document.getElementById('service-card-front-export-user');
+    const backEl = document.getElementById('service-card-back-export-user');
+    if (!frontEl || !backEl || !selectedUser) return;
+    
     setIsExporting(true);
     try {
-      const dataUrl = await htmlToImage.toPng(cardRef.current, { 
+      const frontDataUrl = await htmlToImage.toPng(frontEl, { 
         quality: 1, 
-        pixelRatio: 4,
+        pixelRatio: 3,
         backgroundColor: '#ffffff'
       });
       
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
+      const backDataUrl = await htmlToImage.toPng(backEl, { 
+        quality: 1, 
+        pixelRatio: 3,
+        backgroundColor: '#0f172a'
       });
       
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const pdfWidth = 85.6; 
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: [85.6, 53.98]
+      });
       
-      const x = (210 - pdfWidth) / 2;
-      const y = (297 - pdfHeight) / 2;
+      pdf.addImage(frontDataUrl, 'PNG', 0, 0, 85.6, 53.98);
       
-      pdf.addImage(dataUrl, 'PNG', x, y, pdfWidth, pdfHeight);
+      pdf.addPage([85.6, 53.98], 'landscape');
+      pdf.addImage(backDataUrl, 'PNG', 0, 0, 85.6, 53.98);
+      
       pdf.save(`Carte_Service_${selectedUser.fullName}.pdf`);
       
-      setShowToast({ show: true, message: "Carte de service exportée avec succès !" });
+      setShowToast({ show: true, message: "Carte de service exportée avec succès ! (Double-face ID-1)" });
       setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
     } catch (err) {
       console.error(err);
@@ -1831,17 +1838,19 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                       >
                         Informations
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveDetailTab('card')}
-                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
-                          activeDetailTab === 'card'
-                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                        }`}
-                      >
-                        Carte de Service
-                      </button>
+                      {isDGOrHR && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveDetailTab('card')}
+                          className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                            activeDetailTab === 'card'
+                              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Carte de Service
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setActiveDetailTab('documents')}
@@ -2154,7 +2163,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                     </div>
                   )}
                 </form>
-                ) : activeDetailTab === 'card' ? (
+                ) : (activeDetailTab === 'card' && isDGOrHR) ? (
                   /* CARTE DE SERVICE PREVIEW AND ACTIONS */
                   <div className="flex flex-col items-center justify-center gap-6 py-4">
                     <div className="flex flex-col sm:flex-row gap-4 w-full">
@@ -2341,115 +2350,163 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                       </div>
                     </div>
 
-                    {/* Hidden export template for this individual user */}
-                    <div className="fixed -top-[2000px] left-0 pointer-events-none opacity-0">
-                      <div ref={cardRef} className="w-[400px] h-[640px] bg-white flex flex-col pt-10 relative text-slate-900">
+                    {/* Hidden export template for this individual user (Strictly ID-1 landscape standard for high-res PDF generation) */}
+                    <div className="fixed -top-[2000px] left-0 pointer-events-none opacity-0 z-0">
+                      {/* Front Side Export */}
+                      <div id="service-card-front-export-user" className="w-[856px] h-[540px] bg-white rounded-[2.5rem] overflow-hidden flex flex-col p-8 text-slate-900 relative">
+                        <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_2px,transparent_2px)] [background-size:24px_24px] opacity-40"></div>
+                        
                         {/* Header Strip */}
-                        <div className="absolute top-0 left-0 w-full h-28 bg-slate-900 flex items-center px-10">
-                          <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center overflow-hidden p-1 shrink-0">
-                            <img src={settings?.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="" className="w-full h-full object-contain" />
-                          </div>
-                          <div className="ml-5 text-left">
-                            <span className="text-white font-black text-xs uppercase tracking-widest leading-none block">{settings?.companyName || "RIBERJO GLOBAL SERVICE"}</span>
-                            <span className="text-emerald-400 font-black text-[8px] uppercase tracking-widest mt-1 block">Personnel Autorisé</span>
-                          </div>
-                        </div>
-
-                        {/* Photo Area */}
-                        <div className="mt-28 flex flex-col items-center">
-                          <div className="w-40 h-40 bg-white rounded-[45px] p-2 shadow-2xl border border-slate-100 flex items-center justify-center">
-                            <div className="w-full h-full rounded-[38px] overflow-hidden bg-slate-100 flex items-center justify-center">
-                              {selectedUser.avatarUrl ? (
-                                <img src={selectedUser.avatarUrl} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                <User size={80} className="text-slate-300" />
-                              )}
+                        <div className="flex items-center justify-between border-b-2 border-slate-100 pb-4 mb-4 z-10">
+                          <div className="flex items-center gap-5">
+                            <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center p-2 shadow-lg">
+                              <img src={settings?.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
+                            </div>
+                            <div className="text-left">
+                              <h1 className="text-slate-900 font-black text-[22px] uppercase tracking-wider leading-none">{settings?.companyName || "RIBERJO GLOBAL SERVICE"}</h1>
+                              <p className="text-[13px] font-black text-emerald-600 uppercase tracking-widest mt-2">Identification Officielle • ID-1 Standard</p>
                             </div>
                           </div>
-                        </div>
-
-                        {/* Personal Info */}
-                        <div className="mt-10 px-10 text-center">
-                          <span className="text-2xl font-black text-slate-900 uppercase tracking-tight block">{selectedUser.fullName}</span>
-                          <span className="text-xs font-black text-emerald-600 uppercase tracking-[0.2em] mt-2 block">
-                            {selectedUser.role.replace('_', ' ')}
-                          </span>
-                        </div>
-
-                        {/* Details Table */}
-                        <div className="mt-10 px-14 space-y-6 text-left">
-                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Matricule</span>
-                            <span className="text-sm font-mono font-black text-slate-900">{selectedUser.matricule}</span>
-                          </div>
-                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Département</span>
-                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
-                              {DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId} ({selectedUser.departmentId})
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Service</span>
-                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
-                              {(() => {
-                                const matchingService = SERVICES_LIST.find(
-                                  (s) =>
-                                    s.deptId === selectedUser.departmentId &&
-                                    s.id === selectedUser.serviceId,
-                                );
-                                if (matchingService) {
-                                  return `${matchingService.name} (${matchingService.id})`;
-                                }
-                                return selectedUser.serviceId ? `Service ${selectedUser.serviceId}` : "Général";
-                              })()}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Validité</span>
-                            <span className="text-sm font-black text-slate-900">31/12/2026</span>
+                          <div className="px-4 py-1 bg-emerald-50 text-emerald-700 text-[12px] font-black uppercase tracking-widest rounded-xl border-2 border-emerald-100/60 font-sans">
+                            PVC RIGIDE
                           </div>
                         </div>
 
-                        {/* Footer QR */}
-                        <div className="mt-auto mb-12 px-14 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
-                              <QRCodeCanvas value={`${window.location.origin}/verify/${selectedUser.matricule.replace(/\//g, '_')}`} size={64} level="H" />
-                            </div>
-                            <div className="text-left leading-none">
-                              <span className="text-[8px] font-black text-emerald-600 uppercase tracking-wider mb-1 block">VÉRIFIER L'AUTHENTICITÉ</span>
-                              <span className="text-[7px] font-medium text-slate-450 uppercase tracking-normal leading-normal block">Scanner le code QR pour<br/>vérifier l'authenticité</span>
-                            </div>
-                          </div>
-                          <div className="text-right relative flex flex-col items-end justify-end w-32 h-16 text-slate-900">
-                            {/* Seal Stamp Overlay */}
-                            {settings?.dgSealUrl ? (
-                              <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-4 bottom-2 w-12 h-12 object-contain pointer-events-none opacity-85 rotate-12" />
-                            ) : (
-                              /* Generated seal SVG by default */
-                              <div className="absolute right-4 bottom-2 w-12 h-12 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
-                                <svg width="48" height="48" viewBox="0 0 100 100" className="text-red-600">
-                                  <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
-                                  <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
-                                  <path id="sealPathExportUsers" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
-                                  <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
-                                    <textPath href="#sealPathExportUsers" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
-                                  </text>
-                                  <path id="sealPathExportUsersBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
-                                  <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
-                                    <textPath href="#sealPathExportUsersBottom" startOffset="50%" textAnchor="middle">DIRECTION GEN</textPath>
-                                  </text>
-                                  <text x="50" y="54" className="text-[10px] font-black fill-red-600 uppercase tracking-tighter" textAnchor="middle">SCEAU</text>
-                                </svg>
+                        {/* Body content */}
+                        <div className="flex gap-8 items-center z-10 flex-1">
+                          {/* Left Block: Photo & Chip */}
+                          <div className="flex flex-col items-center gap-4 shrink-0">
+                            <div className="w-[200px] h-[200px] bg-slate-50 rounded-[2rem] p-2 shadow-xl border-2 border-slate-100 relative overflow-hidden">
+                              <div className="w-full h-full rounded-[1.5rem] overflow-hidden bg-slate-100">
+                                {selectedUser.avatarUrl ? (
+                                  <img src={selectedUser.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-slate-300">
+                                    <User size={88} />
+                                  </div>
+                                )}
                               </div>
-                            )}
-                            {/* Signature Overlay */}
-                            {settings?.dgSignatureUrl ? (
-                              <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-2 bottom-4 h-12 object-contain pointer-events-none max-w-[100px] z-10" />
-                            ) : (
-                              <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
-                            )}
-                            <span className="text-[8px] font-black text-slate-450 uppercase tracking-[0.2em] block z-10 mt-auto">{settings?.dgName || "Signature Officielle"}</span>
+                            </div>
+                            {/* Metallic Smart Chip */}
+                            <div className="w-[72px] h-[50px] bg-gradient-to-br from-amber-200 via-amber-300 to-amber-500 rounded-xl border-2 border-amber-600/30 shadow-inner flex flex-col justify-around p-1">
+                              <div className="h-[2px] bg-slate-800/20 w-full"></div>
+                              <div className="flex justify-between w-full">
+                                <div className="w-[2px] h-6 bg-slate-800/20"></div>
+                                <div className="w-[2px] h-6 bg-slate-800/20"></div>
+                              </div>
+                              <div className="h-[2px] bg-slate-800/20 w-full"></div>
+                            </div>
+                          </div>
+
+                          {/* Right Block: Personal Info */}
+                          <div className="flex-1 text-left flex flex-col h-full justify-between py-2">
+                            <div>
+                              <span className="text-[14px] font-black text-slate-400 uppercase tracking-widest block leading-none">Nom de l'agent</span>
+                              <h2 className="text-[28px] font-black text-slate-900 uppercase tracking-tight leading-none mt-2 truncate max-w-[420px]">{selectedUser.fullName}</h2>
+                              
+                              <span className="text-[14px] font-black text-slate-400 uppercase tracking-widest block leading-none mt-4">Fonction / Rôle</span>
+                              <p className="text-[18px] font-black text-emerald-600 uppercase tracking-wider leading-none mt-2">{selectedUser.role.replace('_', ' ')}</p>
+                            </div>
+
+                            {/* Details grid table */}
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-3 mt-4 pt-4 border-t-2 border-slate-100">
+                              <div>
+                                <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Matricule</span>
+                                <span className="text-[18px] font-mono font-black text-slate-800 leading-none">{selectedUser.matricule}</span>
+                              </div>
+                              <div>
+                                <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Département</span>
+                                <span className="text-[16px] font-black text-slate-800 leading-none block truncate max-w-[200px]">
+                                  {DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Unité / Service</span>
+                                <span className="text-[15px] font-black text-slate-800 leading-none block truncate max-w-[200px]">
+                                  {(() => {
+                                    const matchingService = SERVICES_LIST.find(
+                                      (s) =>
+                                        s.deptId === selectedUser.departmentId &&
+                                        s.id === selectedUser.serviceId,
+                                    );
+                                    if (matchingService) {
+                                      return `${matchingService.name}`;
+                                    }
+                                    return selectedUser.serviceId ? `Service ${selectedUser.serviceId}` : "Général";
+                                  })()}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Validité</span>
+                                <span className="text-[16px] font-black text-slate-800 leading-none font-sans">31 DÉCEMBRE 2026</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Back Side Export */}
+                      <div id="service-card-back-export-user" className="w-[856px] h-[540px] bg-slate-900 rounded-[2.5rem] overflow-hidden flex flex-col p-8 text-white relative">
+                        {/* Top Black Magnetic Band */}
+                        <div className="absolute top-8 left-0 w-full h-[72px] bg-slate-950"></div>
+                        
+                        {/* Content below magnetic band */}
+                        <div className="mt-28 flex justify-between gap-8 flex-1 items-start">
+                          {/* Conditions, contact */}
+                          <div className="flex-1 text-left space-y-3">
+                            <h3 className="text-[15px] font-black uppercase tracking-widest text-emerald-400">Conditions d'Utilisation</h3>
+                            <p className="text-[11px] text-slate-400 leading-relaxed uppercase font-bold tracking-wider max-w-[420px]">
+                              1. Cette carte est strictement personnelle et incessible.<br/>
+                              2. Elle demeure la propriété de {settings?.companyName || "RIBERJO GLOBAL SERVICE"}.<br/>
+                              3. En cas de perte, aviser immédiatement la direction.<br/>
+                              4. Elle doit être portée visiblement lors du service.<br/>
+                              5. Toute fraude expose à des sanctions sévères.
+                            </p>
+                            <div className="bg-white/5 p-3 rounded-2xl border border-white/10 text-left mt-4 max-w-[280px]">
+                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block italic">Contact d'Urgence</span>
+                              <span className="text-[15px] font-black uppercase tracking-widest block leading-none mt-1">+243 812 345 678</span>
+                            </div>
+                          </div>
+
+                          {/* Signature, Seal & QR block */}
+                          <div className="flex flex-col items-end gap-4 shrink-0">
+                            {/* Signature panel */}
+                            <div className="relative w-[280px] h-[80px] bg-slate-50 rounded-xl border border-slate-300 p-2 text-slate-900 flex flex-col justify-end items-center">
+                              <span className="absolute left-2 top-1 text-[9px] font-black text-slate-400 uppercase tracking-widest">Signature Direction</span>
+                              
+                              {/* Stamp/Seal overlay */}
+                              {settings?.dgSealUrl ? (
+                                <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-4 top-1 w-16 h-16 object-contain opacity-85 rotate-12 pointer-events-none" />
+                              ) : (
+                                <div className="absolute right-4 top-1 w-16 h-16 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
+                                  <svg width="64" height="64" viewBox="0 0 100 100" className="text-red-600">
+                                    <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                                    <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                                    <path id="sealPathBackExportUsers" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                                    <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                      <textPath href="#sealPathBackExportUsers" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                                    </text>
+                                  </svg>
+                                </div>
+                              )}
+                              
+                              {/* Signature overlay */}
+                              {settings?.dgSignatureUrl ? (
+                                <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-6 bottom-2 h-12 object-contain pointer-events-none max-w-[150px]" />
+                              ) : (
+                                <div className="h-8 w-40 border-b border-slate-900 mb-1 opacity-20"></div>
+                              )}
+                              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none z-10">{settings?.dgName || "Directeur Général"}</span>
+                            </div>
+
+                            {/* Verification QR Code */}
+                            <div className="flex items-center gap-3 mt-1 bg-white p-2 rounded-xl border border-white/10 shrink-0">
+                              <QRCodeCanvas value={`${window.location.origin}/verify/${selectedUser.matricule.replace(/\//g, '_')}`} size={64} level="M" />
+                              <div className="text-left leading-none text-slate-900">
+                                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block">VÉRIFIER</span>
+                                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-normal leading-tight block">Authenticité<br/>en ligne</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>

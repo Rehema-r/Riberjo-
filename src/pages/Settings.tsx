@@ -62,6 +62,7 @@ interface SettingsProps {
 
 export default function Settings({ initialTab = 'profile' }: SettingsProps) {
   const { profile, roleLabel } = useAuth();
+  const isDGOrHR = profile?.role === 'SUPER_ADMIN' || profile?.role === 'BOARD_MEMBER' || profile?.departmentId === '03';
   const logoInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
   const sigFileInputRef = useRef<HTMLInputElement>(null);
@@ -327,34 +328,38 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
   }, [profile, isSaving]);
 
   const handleDownloadCard = async () => {
-    const card = document.getElementById('service-card-export');
-    if (!card) return;
+    const frontEl = document.getElementById('service-card-front-export');
+    const backEl = document.getElementById('service-card-back-export');
+    if (!frontEl || !backEl) return;
     
     setIsExporting(true);
     try {
-      const dataUrl = await htmlToImage.toPng(card, { 
+      const frontDataUrl = await htmlToImage.toPng(frontEl, { 
         quality: 1, 
-        pixelRatio: 4,
+        pixelRatio: 3,
         backgroundColor: '#ffffff'
       });
       
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
+      const backDataUrl = await htmlToImage.toPng(backEl, { 
+        quality: 1, 
+        pixelRatio: 3,
+        backgroundColor: '#0f172a'
       });
       
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const pdfWidth = 85.6; 
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: [85.6, 53.98]
+      });
       
-      const x = (210 - pdfWidth) / 2;
-      const y = (297 - pdfHeight) / 2;
+      pdf.addImage(frontDataUrl, 'PNG', 0, 0, 85.6, 53.98);
       
-      pdf.addImage(dataUrl, 'PNG', x, y, pdfWidth, pdfHeight);
+      pdf.addPage([85.6, 53.98], 'landscape');
+      pdf.addImage(backDataUrl, 'PNG', 0, 0, 85.6, 53.98);
+      
       pdf.save(`Carte_Service_${profileData.fullName || profile?.fullName}.pdf`);
       
-      setSuccess("Carte de service exportée avec succès !");
+      setSuccess("Carte de service exportée avec succès ! (Double-face ID-1)");
     } catch (err) {
       console.error(err);
       setError("Erreur lors de l'exportation de la carte.");
@@ -759,7 +764,8 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
             </div>
 
             {/* Service Card Section */}
-            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-sm mt-8 no-print">
+            {isDGOrHR && (
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-sm mt-8 no-print">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                   <div className="p-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl">
@@ -791,198 +797,86 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                    >
                      {isExporting ? <RefreshCw size={16} className="animate-spin" /> : <Download size={16} />}
                      <span>{isExporting ? "Téléchargement..." : "Télécharger PDF"}</span>
-                   </button>
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex flex-col lg:flex-row items-center justify-center gap-12 py-12 bg-slate-50 dark:bg-slate-800/30 rounded-[3rem] border border-slate-100 dark:border-slate-800 border-dashed overflow-hidden">
+                <div className="flex flex-col lg:flex-row items-center justify-center gap-8 py-12 bg-slate-50 dark:bg-slate-800/30 rounded-[3rem] border border-slate-100 dark:border-slate-800 border-dashed overflow-hidden">
                 {/* Front Side Preview */}
-                <div className="flex flex-col items-center gap-4 scale-75 md:scale-90 lg:scale-100 origin-center -my-20 md:my-0">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Avant</p>
-                  <div className="relative w-[320px] h-[500px] bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col pt-8">
+                <div className="flex flex-col items-center gap-4 scale-75 md:scale-90 lg:scale-100 origin-center">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Avant (Recto)</p>
+                  <div className="relative w-[450px] h-[284px] bg-white rounded-[1.25rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col p-4">
+                    {/* Glossy Overlay */}
+                    <div className="absolute inset-0 pointer-events-none bg-gradient-to-tr from-white/0 via-white/5 to-white/10 mix-blend-overlay z-20"></div>
+                    <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:12px_12px] opacity-40"></div>
+
                     {/* Header Strip */}
-                    <div className="absolute top-0 left-0 w-full h-24 bg-slate-900 flex items-center px-8">
-                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden p-1">
-                        <img src={settings.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
-                      </div>
-                      <div className="ml-4">
-                        <h1 className="text-white font-black text-[10px] uppercase tracking-[0.1em] leading-none">{settings.companyName}</h1>
-                        <p className="text-emerald-400 font-black text-[7px] uppercase tracking-widest mt-1">Identification Officielle</p>
-                      </div>
-                    </div>
-
-                    {/* Photo Area */}
-                    <div className="mt-24 flex flex-col items-center">
-                      <div className="w-36 h-36 bg-slate-50 rounded-[40px] p-1.5 shadow-xl border border-slate-100 relative">
-                        <div className="w-full h-full rounded-[32px] overflow-hidden bg-slate-200">
-                          {profileData.avatarUrl ? (
-                            <img src={profileData.avatarUrl || null} alt="Profile" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-slate-400">
-                              <User size={64} />
-                            </div>
-                          )}
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 z-10">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center p-1 shadow-md">
+                          <img src={settings.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="text-left">
+                          <h1 className="text-slate-900 font-black text-[11px] uppercase tracking-wider leading-none">{settings.companyName}</h1>
+                          <p className="text-[7.5px] font-black text-emerald-600 uppercase tracking-widest mt-1">Identification Officielle • ID-1 Standard</p>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Personal Info */}
-                    <div className="mt-8 px-8 text-center space-y-1">
-                      <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight leading-tight px-4">{profileData.fullName || profile?.fullName}</h2>
-                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em]">{roleLabel}</p>
-                    </div>
-
-                    {/* Details Table */}
-                    <div className="mt-8 px-10 space-y-4">
-                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Matricule</span>
-                        <span className="text-[11px] font-mono font-black text-slate-900">{profile?.matricule}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Département</span>
-                        <span className="text-[10px] font-black text-slate-900 truncate max-w-[120px]" title={DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId}>
-                          {DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId} ({profile?.departmentId})
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Service</span>
-                        <span className="text-[10px] font-black text-slate-900 truncate max-w-[120px]">
-                          {(() => {
-                            const matchingService = SERVICES_LIST.find(
-                              (s) =>
-                                s.deptId === profile?.departmentId &&
-                                s.id === profile?.serviceId,
-                            );
-                            if (matchingService) {
-                              return `${matchingService.name} (${matchingService.id})`;
-                            }
-                            return profile?.serviceId ? `Service ${profile?.serviceId}` : "Général";
-                          })()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Validité</span>
-                        <span className="text-[11px] font-black text-slate-900">31 DEC 2026</span>
+                      <div className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[6.5px] font-black uppercase tracking-widest rounded-md border border-emerald-100/60 font-sans">
+                        PVC RIGIDE
                       </div>
                     </div>
 
-                    {/* Footer QR */}
-                    <div className="mt-auto mb-8 px-10 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100 shadow-inner">
-                          <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={48} level="M" />
-                        </div>
-                        <div className="text-left leading-none">
-                          <p className="text-[6px] font-black text-emerald-600 uppercase tracking-wider mb-0.5">VÉRIFIER</p>
-                          <p className="text-[5px] font-bold text-slate-450 uppercase tracking-normal leading-tight">Scanner pour<br/>l'authenticité</p>
-                        </div>
-                      </div>
-                      <div className="text-right relative flex flex-col items-end justify-end w-28 h-12">
-                        {/* Seal Stamp Overlay */}
-                        {settings.dgSealUrl ? (
-                          <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-2 bottom-1 w-8 h-8 object-contain pointer-events-none opacity-85 rotate-12" />
-                        ) : (
-                          /* Generated seal SVG by default */
-                          <div className="absolute right-2 bottom-1 w-8 h-8 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
-                            <svg width="32" height="32" viewBox="0 0 100 100" className="text-red-600">
-                              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
-                              <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
-                              <path id="sealPathInteractiveSettings" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
-                              <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
-                                <textPath href="#sealPathInteractiveSettings" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
-                              </text>
-                              <path id="sealPathInteractiveSettingsBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
-                              <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
-                                <textPath href="#sealPathInteractiveSettingsBottom" startOffset="50%" textAnchor="middle">DIRECTION</textPath>
-                              </text>
-                            </svg>
+                    {/* Body content */}
+                    <div className="flex gap-4 items-center z-10 flex-1">
+                      {/* Left Block: Photo & Chip */}
+                      <div className="flex flex-col items-center gap-2 shrink-0">
+                        <div className="w-[100px] h-[100px] bg-slate-50 rounded-2xl p-1 shadow-md border border-slate-100 relative overflow-hidden">
+                          <div className="w-full h-full rounded-[12px] overflow-hidden bg-slate-100">
+                            {profileData.avatarUrl ? (
+                              <img src={profileData.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-slate-300">
+                                <User size={44} />
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {/* Signature Overlay */}
-                        {settings.dgSignatureUrl ? (
-                          <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-1 bottom-2 h-8 object-contain pointer-events-none max-w-[64px] z-10" />
-                        ) : (
-                          <div className="h-6 w-16 border-b border-slate-900 mb-0.5 opacity-20"></div>
-                        )}
-                        <p className="text-[5px] font-black text-slate-400 uppercase tracking-widest leading-none z-10 mt-auto">{settings.dgName || "Signature Direction"}</p>
+                        </div>
+                        {/* Metallic Smart Chip */}
+                        <div className="w-[34px] h-[24px] bg-gradient-to-br from-amber-200 via-amber-300 to-amber-500 rounded-md border border-amber-600/30 shadow-inner flex flex-col justify-around p-[2px]">
+                          <div className="h-[1px] bg-slate-800/20 w-full"></div>
+                          <div className="flex justify-between w-full">
+                            <div className="w-[1px] h-3 bg-slate-800/20"></div>
+                            <div className="w-[1px] h-3 bg-slate-800/20"></div>
+                          </div>
+                          <div className="h-[1px] bg-slate-800/20 w-full"></div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Back Side Preview */}
-                <div className="flex flex-col items-center gap-4 scale-75 md:scale-90 lg:scale-100 origin-center -my-20 md:my-0">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Arrière</p>
-                  <div className="relative w-[320px] h-[500px] bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col p-8 text-white">
-                    <div className="flex justify-center mb-8 opacity-20">
-                      <LayoutGrid size={48} />
-                    </div>
-                    
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-4">Conditions d'Utilisation</h3>
-                    <p className="text-[8px] text-slate-400 leading-relaxed uppercase font-bold tracking-wider space-y-4">
-                      1. Cette carte est strictement personnelle et incessible.<br/><br/>
-                      2. Elle demeure la propriété exclusive de {settings.companyName}.<br/><br/>
-                      3. En cas de perte, le titulaire doit en informer immédiatement la direction.<br/><br/>
-                      4. Elle doit être portée visiblement lors de l'exercice des fonctions.<br/><br/>
-                      5. Toute utilisation frauduleuse expose son auteur à des poursuites.
-                    </p>
+                      {/* Right Block: Personal Info */}
+                      <div className="flex-1 text-left flex flex-col h-full justify-between py-1">
+                        <div>
+                          <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block leading-none">Nom de l'agent</span>
+                          <h2 className="text-[15px] font-black text-slate-900 uppercase tracking-tight leading-none mt-1 truncate max-w-[210px]">{profileData.fullName || profile?.fullName}</h2>
+                          
+                          <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block leading-none mt-2.5">Fonction / Rôle</span>
+                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider leading-none mt-1">{roleLabel}</p>
+                        </div>
 
-                    <div className="mt-auto space-y-6">
-                      <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
-                        <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest mb-1 italic">Contact d'Urgence</p>
-                        <p className="text-[9px] font-black uppercase tracking-widest">+243 812 345 678</p>
-                      </div>
-                      
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="w-12 h-1 bg-emerald-500 rounded-full"></div>
-                        <p className="text-[7px] font-black text-slate-500 uppercase tracking-[0.3em]">www.riberjo.com</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Hidden Export Construction Area (Strictly CR80-like for pdf) */}
-              <div className="fixed -top-[1000px] left-0 pointer-events-none opacity-0">
-                <div id="service-card-export" className="w-[400px] h-[640px] bg-white flex flex-col pt-10 relative">
-                    <div className="absolute top-0 left-0 w-full h-28 bg-slate-900 flex items-center px-10">
-                        <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center overflow-hidden p-1">
-                            <img src={settings.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="" className="w-full h-full object-contain" />
-                        </div>
-                        <div className="ml-5">
-                            <h1 className="text-white font-black text-xs uppercase tracking-widest">{settings.companyName}</h1>
-                            <p className="text-emerald-400 font-black text-[8px] uppercase tracking-widest mt-1">Personnel Autorisé</p>
-                        </div>
-                    </div>
-                    <div className="mt-28 flex flex-col items-center">
-                        <div className="w-40 h-40 bg-white rounded-[45px] p-2 shadow-2xl border border-slate-100 flex items-center justify-center">
-                            <div className="w-full h-full rounded-[38px] overflow-hidden bg-slate-100 flex items-center justify-center">
-                                {profileData.avatarUrl ? (
-                                    <img src={profileData.avatarUrl} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    <User size={80} className="text-slate-300" />
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                    <div className="mt-10 px-10 text-center">
-                        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{profileData.fullName || profile?.fullName}</h2>
-                        <p className="text-xs font-black text-emerald-600 uppercase tracking-[0.2em] mt-2">{roleLabel}</p>
-                    </div>
-                    <div className="mt-10 px-14 space-y-6">
-                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Matricule</span>
-                            <span className="text-sm font-mono font-black text-slate-900">{profile?.matricule}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Département</span>
-                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
-                              {DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId} ({profile?.departmentId})
+                        {/* Details grid table */}
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2 pt-2 border-t border-slate-100">
+                          <div>
+                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest block">Matricule</span>
+                            <span className="text-[10.5px] font-mono font-black text-slate-800 leading-none">{profile?.matricule}</span>
+                          </div>
+                          <div>
+                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest block">Département</span>
+                            <span className="text-[9px] font-black text-slate-800 leading-none block truncate max-w-[110px]" title={DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId}>
+                              {DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId}
                             </span>
-                        </div>
-                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Service</span>
-                            <span className="text-sm font-black text-slate-950 truncate max-w-[180px] text-right">
+                          </div>
+                          <div>
+                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest block">Unité / Service</span>
+                            <span className="text-[9px] font-black text-slate-800 leading-none block truncate max-w-[110px]">
                               {(() => {
                                 const matchingService = SERVICES_LIST.find(
                                   (s) =>
@@ -990,74 +884,267 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                                     s.id === profile?.serviceId,
                                 );
                                 if (matchingService) {
-                                  return `${matchingService.name} (${matchingService.id})`;
+                                  return `${matchingService.name}`;
                                 }
                                 return profile?.serviceId ? `Service ${profile?.serviceId}` : "Général";
                               })()}
                             </span>
+                          </div>
+                          <div>
+                            <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest block">Validité</span>
+                            <span className="text-[9.5px] font-black text-slate-800 leading-none">31 DEC 2026</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Validité</span>
-                            <span className="text-sm font-black text-slate-900">31/12/2026</span>
-                        </div>
+                      </div>
                     </div>
-                    <div className="mt-auto mb-12 px-14 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-slate-50 p-2 rounded-2xl border border-slate-100">
-                                <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={64} level="H" />
-                            </div>
-                            <div className="text-left leading-none">
-                                <p className="text-[8px] font-black text-emerald-600 uppercase tracking-wider mb-1">VÉRIFIER L'AUTHENTICITÉ</p>
-                                <p className="text-[7px] font-medium text-slate-400 uppercase tracking-normal leading-normal">Scanner le code QR pour<br/>vérifier l'authenticité</p>
-                            </div>
+                  </div>
+                </div>
+
+                {/* Back Side Preview */}
+                <div className="flex flex-col items-center gap-4 scale-75 md:scale-90 lg:scale-100 origin-center">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Arrière (Verso)</p>
+                  <div className="relative w-[450px] h-[284px] bg-slate-900 rounded-[1.25rem] shadow-2xl overflow-hidden flex flex-col p-4 text-white border border-slate-800">
+                    {/* Top Black Magnetic Band */}
+                    <div className="absolute top-4 left-0 w-full h-[36px] bg-slate-950"></div>
+                    
+                    {/* Content below magnetic band */}
+                    <div className="mt-14 flex justify-between gap-4 flex-1 items-start">
+                      {/* Conditions, contact */}
+                      <div className="flex-1 text-left space-y-1.5">
+                        <h3 className="text-[7.5px] font-black uppercase tracking-widest text-emerald-400">Conditions d'Utilisation</h3>
+                        <p className="text-[5.5px] text-slate-400 leading-normal uppercase font-bold tracking-wider max-w-[210px]">
+                          1. Cette carte est strictly personnelle et incessible.<br/>
+                          2. Elle demeure la propriété de {settings.companyName}.<br/>
+                          3. En cas de perte, aviser immédiatement la direction.<br/>
+                          4. Elle doit être portée visiblement lors du service.<br/>
+                          5. Toute fraude expose à des sanctions sévères.
+                        </p>
+                        <div className="bg-white/5 p-1 rounded-lg border border-white/10 text-left mt-2 max-w-[160px]">
+                          <span className="text-[5px] font-black text-slate-500 uppercase tracking-widest block italic">Contact d'Urgence</span>
+                          <span className="text-[7.5px] font-black uppercase tracking-widest block leading-none mt-0.5">+243 812 345 678</span>
                         </div>
-                        <div className="text-right relative flex flex-col items-end justify-end w-32 h-16 text-slate-900">
-                            {/* Seal Stamp Overlay */}
-                            {settings.dgSealUrl ? (
-                              <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-4 bottom-2 w-12 h-12 object-contain pointer-events-none opacity-85 rotate-12" />
-                            ) : (
-                              /* Generated seal SVG by default */
-                              <div className="absolute right-4 bottom-2 w-12 h-12 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
-                                <svg width="48" height="48" viewBox="0 0 100 100" className="text-red-600">
-                                  <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
-                                  <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
-                                  <path id="sealPathExportSettings" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
-                                  <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
-                                    <textPath href="#sealPathExportSettings" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
-                                  </text>
-                                  <path id="sealPathExportSettingsBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
-                                  <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
-                                    <textPath href="#sealPathExportSettingsBottom" startOffset="50%" textAnchor="middle">DIRECTION GEN</textPath>
-                                  </text>
-                                  <text x="50" y="54" className="text-[10px] font-black fill-red-600 uppercase tracking-tighter" textAnchor="middle">SCEAU</text>
-                                </svg>
-                              </div>
-                            )}
-                            {/* Signature Overlay */}
-                            {settings.dgSignatureUrl ? (
-                              <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-2 bottom-4 h-12 object-contain pointer-events-none max-w-[100px] z-10" />
-                            ) : (
-                              <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
-                            )}
-                            <p className="text-[8px] font-black text-slate-450 uppercase tracking-[0.2em] leading-none z-10 mt-auto">{settings.dgName || "Signature Officielle"}</p>
+                      </div>
+
+                      {/* Signature, Seal & QR block */}
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        {/* Signature panel */}
+                        <div className="relative w-[150px] h-[44px] bg-slate-50 rounded border border-slate-300 p-1 text-slate-900 flex flex-col justify-end items-center">
+                          <span className="absolute left-1 top-0.5 text-[4.5px] font-black text-slate-400 uppercase tracking-widest">Signature Direction</span>
+                          
+                          {/* Stamp/Seal overlay */}
+                          {settings.dgSealUrl ? (
+                            <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-2 top-0 w-8 h-8 object-contain opacity-85 rotate-12 pointer-events-none" />
+                          ) : (
+                            <div className="absolute right-2 top-0 w-8 h-8 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
+                              <svg width="32" height="32" viewBox="0 0 100 100" className="text-red-600">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                                <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                                <path id="sealPathBackPreview" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                                <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                  <textPath href="#sealPathBackPreview" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                                </text>
+                              </svg>
+                            </div>
+                          )}
+                          
+                          {/* Signature overlay */}
+                          {settings.dgSignatureUrl ? (
+                            <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-4 bottom-1 h-6 object-contain pointer-events-none max-w-[80px]" />
+                          ) : (
+                            <div className="h-4 w-20 border-b border-slate-900 mb-0.5 opacity-20"></div>
+                          )}
+                          <span className="text-[5.5px] font-black text-slate-500 uppercase tracking-widest leading-none z-10">{settings.dgName || "Directeur Général"}</span>
                         </div>
+
+                        {/* Verification QR Code */}
+                        <div className="flex items-center gap-1.5 mt-0.5 bg-white p-1 rounded-lg border border-white/10 shrink-0">
+                          <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={30} level="M" />
+                          <div className="text-left leading-none text-slate-900">
+                            <span className="text-[5px] font-black text-emerald-600 uppercase tracking-wider block">VÉRIFIER</span>
+                            <span className="text-[4px] font-bold text-slate-500 uppercase tracking-normal leading-tight block">Authenticité<br/>en ligne</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hidden Export Construction Area (Strictly ID-1 landscape standard for high-res PDF generation) */}
+              <div className="fixed -top-[2000px] left-0 pointer-events-none opacity-0">
+                {/* Front Side Export */}
+                <div id="service-card-front-export" className="w-[856px] h-[540px] bg-white rounded-[2.5rem] overflow-hidden flex flex-col p-8 text-slate-900 relative">
+                  <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_2px,transparent_2px)] [background-size:24px_24px] opacity-40"></div>
+                  
+                  {/* Header Strip */}
+                  <div className="flex items-center justify-between border-b-2 border-slate-100 pb-4 mb-4 z-10">
+                    <div className="flex items-center gap-5">
+                      <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center p-2 shadow-lg">
+                        <img src={settings.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
+                      </div>
+                      <div className="text-left">
+                        <h1 className="text-slate-900 font-black text-[22px] uppercase tracking-wider leading-none">{settings.companyName}</h1>
+                        <p className="text-[13px] font-black text-emerald-600 uppercase tracking-widest mt-2">Identification Officielle • ID-1 Standard</p>
+                      </div>
+                    </div>
+                    <div className="px-4 py-1 bg-emerald-50 text-emerald-700 text-[12px] font-black uppercase tracking-widest rounded-xl border-2 border-emerald-100/60 font-sans">
+                      PVC RIGIDE
+                    </div>
+                  </div>
+
+                  {/* Body content */}
+                  <div className="flex gap-8 items-center z-10 flex-1">
+                    {/* Left Block: Photo & Chip */}
+                    <div className="flex flex-col items-center gap-4 shrink-0">
+                      <div className="w-[200px] h-[200px] bg-slate-50 rounded-[2rem] p-2 shadow-xl border-2 border-slate-100 relative overflow-hidden">
+                        <div className="w-full h-full rounded-[1.5rem] overflow-hidden bg-slate-100">
+                          {profileData.avatarUrl ? (
+                            <img src={profileData.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-300">
+                              <User size={88} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Metallic Smart Chip */}
+                      <div className="w-[72px] h-[50px] bg-gradient-to-br from-amber-200 via-amber-300 to-amber-500 rounded-xl border-2 border-amber-600/30 shadow-inner flex flex-col justify-around p-1">
+                        <div className="h-[2px] bg-slate-800/20 w-full"></div>
+                        <div className="flex justify-between w-full">
+                          <div className="w-[2px] h-6 bg-slate-800/20"></div>
+                          <div className="w-[2px] h-6 bg-slate-800/20"></div>
+                        </div>
+                        <div className="h-[2px] bg-slate-800/20 w-full"></div>
+                      </div>
+                    </div>
+
+                    {/* Right Block: Personal Info */}
+                    <div className="flex-1 text-left flex flex-col h-full justify-between py-2">
+                      <div>
+                        <span className="text-[14px] font-black text-slate-400 uppercase tracking-widest block leading-none">Nom de l'agent</span>
+                        <h2 className="text-[28px] font-black text-slate-900 uppercase tracking-tight leading-none mt-2 truncate max-w-[420px]">{profileData.fullName || profile?.fullName}</h2>
+                        
+                        <span className="text-[14px] font-black text-slate-400 uppercase tracking-widest block leading-none mt-4">Fonction / Rôle</span>
+                        <p className="text-[18px] font-black text-emerald-600 uppercase tracking-wider leading-none mt-2">{roleLabel}</p>
+                      </div>
+
+                      {/* Details grid table */}
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-3 mt-4 pt-4 border-t-2 border-slate-100">
+                        <div>
+                          <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Matricule</span>
+                          <span className="text-[18px] font-mono font-black text-slate-800 leading-none">{profile?.matricule}</span>
+                        </div>
+                        <div>
+                          <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Département</span>
+                          <span className="text-[16px] font-black text-slate-800 leading-none block truncate max-w-[200px]">
+                            {DEPARTMENTS.find((d) => d.id === profile?.departmentId)?.name || profile?.departmentId}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Unité / Service</span>
+                          <span className="text-[15px] font-black text-slate-800 leading-none block truncate max-w-[200px]">
+                            {(() => {
+                              const matchingService = SERVICES_LIST.find(
+                                (s) =>
+                                  s.deptId === profile?.departmentId &&
+                                  s.id === profile?.serviceId,
+                              );
+                              if (matchingService) {
+                                return `${matchingService.name}`;
+                              }
+                              return profile?.serviceId ? `Service ${profile?.serviceId}` : "Général";
+                            })()}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Validité</span>
+                          <span className="text-[16px] font-black text-slate-800 leading-none font-sans">31 DÉCEMBRE 2026</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Back Side Export */}
+                <div id="service-card-back-export" className="w-[856px] h-[540px] bg-slate-900 rounded-[2.5rem] overflow-hidden flex flex-col p-8 text-white relative">
+                  {/* Top Black Magnetic Band */}
+                  <div className="absolute top-8 left-0 w-full h-[72px] bg-slate-950"></div>
+                  
+                  {/* Content below magnetic band */}
+                  <div className="mt-28 flex justify-between gap-8 flex-1 items-start">
+                    {/* Conditions, contact */}
+                    <div className="flex-1 text-left space-y-3">
+                      <h3 className="text-[15px] font-black uppercase tracking-widest text-emerald-400">Conditions d'Utilisation</h3>
+                      <p className="text-[11px] text-slate-400 leading-relaxed uppercase font-bold tracking-wider max-w-[420px]">
+                        1. Cette carte est strictement personnelle et incessible.<br/>
+                        2. Elle demeure la propriété de {settings.companyName}.<br/>
+                        3. En cas de perte, aviser immédiatement la direction.<br/>
+                        4. Elle doit être portée visiblement lors du service.<br/>
+                        5. Toute fraude expose à des sanctions sévères.
+                      </p>
+                      <div className="bg-white/5 p-3 rounded-2xl border border-white/10 text-left mt-4 max-w-[280px]">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block italic">Contact d'Urgence</span>
+                        <span className="text-[15px] font-black uppercase tracking-widest block leading-none mt-1">+243 812 345 678</span>
+                      </div>
+                    </div>
+
+                    {/* Signature, Seal & QR block */}
+                    <div className="flex flex-col items-end gap-4 shrink-0">
+                      {/* Signature panel */}
+                      <div className="relative w-[280px] h-[80px] bg-slate-50 rounded-xl border border-slate-300 p-2 text-slate-900 flex flex-col justify-end items-center">
+                        <span className="absolute left-2 top-1 text-[9px] font-black text-slate-400 uppercase tracking-widest">Signature Direction</span>
+                        
+                        {/* Stamp/Seal overlay */}
+                        {settings.dgSealUrl ? (
+                          <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-4 top-1 w-16 h-16 object-contain opacity-85 rotate-12 pointer-events-none" />
+                        ) : (
+                          <div className="absolute right-4 top-1 w-16 h-16 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
+                            <svg width="64" height="64" viewBox="0 0 100 100" className="text-red-600">
+                              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                              <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                              <path id="sealPathBackExport" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                              <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                <textPath href="#sealPathBackExport" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                              </text>
+                            </svg>
+                          </div>
+                        )}
+                        
+                        {/* Signature overlay */}
+                        {settings.dgSignatureUrl ? (
+                          <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-6 bottom-2 h-12 object-contain pointer-events-none max-w-[150px]" />
+                        ) : (
+                          <div className="h-8 w-40 border-b border-slate-900 mb-1 opacity-20"></div>
+                        )}
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none z-10">{settings.dgName || "Directeur Général"}</span>
+                      </div>
+
+                      {/* Verification QR Code */}
+                      <div className="flex items-center gap-3 mt-1 bg-white p-2 rounded-xl border border-white/10 shrink-0">
+                        <QRCodeCanvas value={`${window.location.origin}/verify/${profile?.matricule.replace(/\//g, '_')}`} size={64} level="M" />
+                        <div className="text-left leading-none text-slate-900">
+                          <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block">VÉRIFIER</span>
+                          <span className="text-[8px] font-bold text-slate-500 uppercase tracking-normal leading-tight block">Authenticité<br/>en ligne</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+            )}
 
             <style>{`
               @media print {
                 body * { visibility: hidden; }
                 .no-print { display: none !important; }
-                #service-card-export { 
+                #service-card-front-export, #service-card-back-export { 
                   visibility: visible; 
-                  position: absolute; 
-                  left: 50%; 
-                  top: 50%; 
-                  transform: translate(-50%, -50%) scale(1.5);
-                  display: flex !important;
+                  position: relative;
+                  display: block !important;
                   opacity: 1 !important;
+                  margin: 30px auto;
+                  page-break-inside: avoid;
                 }
               }
             `}</style>
