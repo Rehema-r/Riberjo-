@@ -10,8 +10,9 @@ import {
   orderBy,
   updateDoc,
   deleteDoc,
+  where,
 } from "firebase/firestore";
-import { UserProfile, Department, RolePermission } from "../types";
+import { UserProfile, Department, RolePermission, AppDocument } from "../types";
 import {
   UserPlus,
   Search,
@@ -31,6 +32,8 @@ import {
   FileText,
   User,
   KeyRound,
+  Plus,
+  Eye,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
@@ -94,9 +97,20 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
   } | null>(null);
   const [newCustomPassword, setNewCustomPassword] = useState("");
 
-  const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'card'>('info');
+  const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'card' | 'documents'>('info');
   const [isExporting, setIsExporting] = useState(false);
+  const [isCardFlipped, setIsCardFlipped] = useState(false);
   const cardRef = React.useRef<HTMLDivElement>(null);
+
+  // States for HR Document Management
+  const [userDocs, setUserDocs] = useState<AppDocument[]>([]);
+  const [isDocsLoading, setIsDocsLoading] = useState(false);
+  const [isDocUploading, setIsDocUploading] = useState(false);
+  const [newDocTitle, setNewDocTitle] = useState("");
+  const [newDocType, setNewDocType] = useState<"contract" | "avenant">("contract");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [documentSearchTerm, setDocumentSearchTerm] = useState("");
+  const [previewDoc, setPreviewDoc] = useState<AppDocument | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -470,6 +484,96 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
       setIsUpdating(null);
     }
   };
+
+  const fetchUserDocuments = async (matricule: string) => {
+    setIsDocsLoading(true);
+    try {
+      const q = query(
+        collection(db, "documents"),
+        where("userId", "==", matricule)
+      );
+      const snap = await getDocs(q);
+      const docsList = snap.docs.map(d => ({ id: d.id, ...d.data() } as AppDocument));
+      docsList.sort((a, b) => b.createdAt - a.createdAt);
+      setUserDocs(docsList);
+    } catch (err) {
+      console.error("Error fetching user docs:", err);
+    } finally {
+      setIsDocsLoading(false);
+    }
+  };
+
+  const handleAddUserDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+    if (!newDocTitle.trim()) {
+      alert("Veuillez saisir un titre pour le document.");
+      return;
+    }
+    if (!selectedFile) {
+      alert("Veuillez sélectionner un fichier.");
+      return;
+    }
+
+    setIsDocUploading(true);
+    try {
+      const reader = new FileReader();
+      const fileUrl = await new Promise<string>((resolve) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(selectedFile);
+      });
+
+      const newDoc = {
+        title: newDocTitle.trim(),
+        type: newDocType === 'contract' ? 'contract' : 'other',
+        category: newDocType,
+        fileUrl: fileUrl,
+        userId: selectedUser.matricule,
+        departmentId: selectedUser.departmentId || "RH",
+        status: "active",
+        signed: false,
+        createdAt: Date.now()
+      };
+
+      await addDoc(collection(db, "documents"), newDoc);
+
+      setNewDocTitle("");
+      setSelectedFile(null);
+      
+      const fileInput = document.getElementById("doc-file-input") as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+
+      fetchUserDocuments(selectedUser.matricule);
+      
+      setShowToast({ show: true, message: "Document RH ajouté avec succès !" });
+      setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
+    } catch (err) {
+      console.error("Error uploading document:", err);
+      alert("Erreur lors de l'ajout du document.");
+    } finally {
+      setIsDocUploading(false);
+    }
+  };
+
+  const handleDeleteUserDocument = async (docId: string) => {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce document ?")) return;
+    try {
+      await deleteDoc(doc(db, "documents", docId));
+      if (selectedUser) {
+        fetchUserDocuments(selectedUser.matricule);
+      }
+      setShowToast({ show: true, message: "Document supprimé avec succès." });
+      setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
+    } catch (err) {
+      console.error("Error deleting doc:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUser && activeDetailTab === 'documents') {
+      fetchUserDocuments(selectedUser.matricule);
+    }
+  }, [selectedUser, activeDetailTab]);
 
 
 
@@ -1738,6 +1842,17 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                       >
                         Carte de Service
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveDetailTab('documents')}
+                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                          activeDetailTab === 'documents'
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Documents RH
+                      </button>
                     </div>
                     <button
                       onClick={() => setIsDetailModalOpen(false)}
@@ -2039,7 +2154,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                     </div>
                   )}
                 </form>
-                ) : (
+                ) : activeDetailTab === 'card' ? (
                   /* CARTE DE SERVICE PREVIEW AND ACTIONS */
                   <div className="flex flex-col items-center justify-center gap-6 py-4">
                     <div className="flex flex-col sm:flex-row gap-4 w-full">
@@ -2052,130 +2167,177 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                              ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 cursor-not-allowed' 
                              : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-500/30'
                          }`}
-                         title="Télécharger la carte en PDF"
+                         title="Exporter la carte en PDF"
                        >
                          {isExporting ? <div className="w-4 h-4 border-2 border-slate-400/30 border-t-emerald-600 rounded-full animate-spin"></div> : <Download size={16} />}
-                         <span>{isExporting ? "Téléchargement..." : "Télécharger PDF Officiel"}</span>
+                         <span>{isExporting ? "Exportation..." : "Exporter en PDF"}</span>
                        </button>
                     </div>
 
-                    <div className="flex flex-col xl:flex-row items-center justify-center gap-8 bg-slate-50 dark:bg-slate-900/40 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 border-dashed w-full overflow-hidden">
-                      {/* Front Side Preview */}
-                      <div className="flex flex-col items-center gap-3">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Avant</p>
-                        <div className="relative w-[280px] h-[437px] bg-white rounded-[2rem] shadow-xl border border-slate-100 flex flex-col pt-6 overflow-hidden text-slate-900">
-                          {/* Header Strip */}
-                          <div className="absolute top-0 left-0 w-full h-20 bg-slate-900 flex items-center px-6">
-                            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
-                              <img src={settings?.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
-                            </div>
-                            <div className="ml-3 text-left">
-                              <span className="text-white font-black text-[9px] uppercase tracking-wider leading-none block">{settings?.companyName || "RIBERJO GLOBAL SERVICE"}</span>
-                              <span className="text-emerald-400 font-black text-[6px] uppercase tracking-widest mt-1 block">Personnel Autorisé</span>
-                            </div>
-                          </div>
+                    <div className="flex flex-col items-center justify-center gap-6 bg-slate-50 dark:bg-slate-900/40 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 border-dashed w-full overflow-hidden">
+                      <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.25em] flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        Survolez ou cliquez pour retourner la carte
+                      </p>
 
-                          {/* Photo Area */}
-                          <div className="mt-20 flex flex-col items-center">
-                            <div className="w-28 h-28 bg-slate-50 rounded-[30px] p-1 shadow-md border border-slate-100 relative">
-                              <div className="w-full h-full rounded-[24px] overflow-hidden bg-slate-200 flex items-center justify-center">
-                                {selectedUser.avatarUrl ? (
-                                  <img src={selectedUser.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                      {/* 3D Card Container */}
+                      <div 
+                        className="relative w-[280px] h-[437px] [perspective:1000px] cursor-pointer group mb-2"
+                        onMouseEnter={() => setIsCardFlipped(true)}
+                        onMouseLeave={() => setIsCardFlipped(false)}
+                        onClick={() => setIsCardFlipped(!isCardFlipped)}
+                      >
+                        <motion.div
+                          className="relative w-full h-full [transform-style:preserve-3d]"
+                          animate={{ rotateY: isCardFlipped ? 180 : 0 }}
+                          transition={{ duration: 0.6, ease: "easeInOut" }}
+                        >
+                          {/* Front Side (Recto) */}
+                          <div 
+                            className="absolute inset-0 w-full h-full bg-white rounded-[2rem] shadow-xl border border-slate-100 flex flex-col pt-6 overflow-hidden text-slate-900"
+                            style={{ backfaceVisibility: "hidden" }}
+                          >
+                            {/* Header Strip */}
+                            <div className="absolute top-0 left-0 w-full h-20 bg-slate-900 flex items-center px-6">
+                              <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
+                                <img src={settings?.logoUrl || "https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png"} alt="Logo" className="w-full h-full object-contain" />
+                              </div>
+                              <div className="ml-3 text-left">
+                                <span className="text-white font-black text-[9px] uppercase tracking-wider leading-none block">{settings?.companyName || "RIBERJO GLOBAL SERVICE"}</span>
+                                <span className="text-emerald-400 font-black text-[6px] uppercase tracking-widest mt-1 block">Personnel Autorisé</span>
+                              </div>
+                            </div>
+
+                            {/* Photo Area */}
+                            <div className="mt-20 flex flex-col items-center">
+                              <div className="w-28 h-28 bg-slate-50 rounded-[30px] p-1 shadow-md border border-slate-100 relative">
+                                <div className="w-full h-full rounded-[24px] overflow-hidden bg-slate-200 flex items-center justify-center">
+                                  {selectedUser.avatarUrl ? (
+                                    <img src={selectedUser.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <User size={48} className="text-slate-400" />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Personal Info */}
+                            <div className="mt-5 px-6 text-center space-y-0.5">
+                              <span className="text-base font-black text-slate-900 uppercase tracking-tight leading-tight truncate block">{selectedUser.fullName}</span>
+                              <span className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] block">{selectedUser.role.replace('_', ' ')}</span>
+                            </div>
+
+                            {/* Details Table */}
+                            <div className="mt-4 px-8 space-y-2 text-left">
+                              <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Matricule</span>
+                                <span className="text-[10px] font-mono font-black text-slate-900">{selectedUser.matricule}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Département</span>
+                                <span className="text-[9px] font-black text-slate-900 truncate max-w-[110px]" title={DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId}>
+                                  {DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Service</span>
+                                <span className="text-[9px] font-black text-slate-900 truncate max-w-[110px]">
+                                  {(() => {
+                                    const matchingService = SERVICES_LIST.find(
+                                      (s) =>
+                                        s.deptId === selectedUser.departmentId &&
+                                        s.id === selectedUser.serviceId,
+                                    );
+                                    if (matchingService) {
+                                      return `${matchingService.name}`;
+                                    }
+                                    return selectedUser.serviceId ? `Service ${selectedUser.serviceId}` : "Général";
+                                  })()}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Validité</span>
+                                <span className="text-[10px] font-black text-slate-900">31 DEC 2026</span>
+                              </div>
+                            </div>
+
+                            {/* Footer QR */}
+                            <div className="mt-auto mb-5 px-8 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 leading-none">
+                                <div className="bg-slate-50 p-1 rounded-lg border border-slate-100 shadow-inner">
+                                  <QRCodeCanvas value={`${window.location.origin}/verify/${selectedUser.matricule.replace(/\//g, '_')}`} size={36} level="M" />
+                                </div>
+                                <div className="text-left leading-none">
+                                  <span className="text-[5px] font-black text-emerald-600 uppercase tracking-wider mb-0.5 block">VÉRIFIER</span>
+                                  <span className="text-[4px] font-bold text-slate-400 uppercase tracking-normal leading-tight block">Scanner pour<br/>l'authenticité</span>
+                                </div>
+                              </div>
+                              <div className="text-right relative flex flex-col items-end justify-end w-24 h-12">
+                                {/* Seal Stamp Overlay */}
+                                {settings?.dgSealUrl ? (
+                                  <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-2 bottom-1 w-8 h-8 object-contain pointer-events-none opacity-85 rotate-12" />
                                 ) : (
-                                  <User size={48} className="text-slate-400" />
+                                  /* Generated seal SVG by default */
+                                  <div className="absolute right-2 bottom-1 w-8 h-8 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
+                                    <svg width="32" height="32" viewBox="0 0 100 100" className="text-red-600">
+                                      <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                                      <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                                      <path id="sealPathInteractiveUsers" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                                      <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                        <textPath href="#sealPathInteractiveUsers" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                                      </text>
+                                      <path id="sealPathInteractiveUsersBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
+                                      <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
+                                        <textPath href="#sealPathInteractiveUsersBottom" startOffset="50%" textAnchor="middle">DIRECTION</textPath>
+                                      </text>
+                                    </svg>
+                                  </div>
                                 )}
+                                {/* Signature Overlay */}
+                                {settings?.dgSignatureUrl ? (
+                                  <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-1 bottom-2 h-8 object-contain pointer-events-none max-w-[64px] z-10" />
+                                ) : (
+                                  <div className="h-6 w-16 border-b border-slate-900 mb-0.5 opacity-20"></div>
+                                )}
+                                <span className="text-[5px] font-black text-slate-400 uppercase tracking-widest leading-none block z-10 mt-auto">{settings?.dgName || "Signature DG"}</span>
                               </div>
                             </div>
                           </div>
 
-                          {/* Personal Info */}
-                          <div className="mt-5 px-6 text-center space-y-0.5">
-                            <span className="text-base font-black text-slate-900 uppercase tracking-tight leading-tight truncate block">{selectedUser.fullName}</span>
-                            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] block">{selectedUser.role.replace('_', ' ')}</span>
-                          </div>
-
-                          {/* Details Table */}
-                          <div className="mt-4 px-8 space-y-2 text-left">
-                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Matricule</span>
-                              <span className="text-[10px] font-mono font-black text-slate-900">{selectedUser.matricule}</span>
-                            </div>
-                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Département</span>
-                              <span className="text-[9px] font-black text-slate-900 truncate max-w-[110px]" title={DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId}>
-                                {DEPARTMENTS.find((d) => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Service</span>
-                              <span className="text-[9px] font-black text-slate-900 truncate max-w-[110px]">
-                                {(() => {
-                                  const matchingService = SERVICES_LIST.find(
-                                    (s) =>
-                                      s.deptId === selectedUser.departmentId &&
-                                      s.id === selectedUser.serviceId,
-                                  );
-                                  if (matchingService) {
-                                    return `${matchingService.name}`;
-                                  }
-                                  return selectedUser.serviceId ? `Service ${selectedUser.serviceId}` : "Général";
-                                })()}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                              <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Validité</span>
-                              <span className="text-[10px] font-black text-slate-900">31 DEC 2026</span>
-                            </div>
-                          </div>
-
-                          {/* Footer QR */}
-                          <div className="mt-auto mb-5 px-8 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 leading-none">
-                              <div className="bg-slate-50 p-1 rounded-lg border border-slate-100 shadow-inner">
-                                <QRCodeCanvas value={`${window.location.origin}/verify/${selectedUser.matricule.replace(/\//g, '_')}`} size={36} level="M" />
-                              </div>
-                              <div className="text-left leading-none">
-                                <span className="text-[5px] font-black text-emerald-600 uppercase tracking-wider mb-0.5 block">VÉRIFIER</span>
-                                <span className="text-[4px] font-bold text-slate-400 uppercase tracking-normal leading-tight block">Scanner pour<br/>l'authenticité</span>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="h-6 w-16 border-b border-slate-900 mb-0.5 opacity-20"></div>
-                              <span className="text-[5px] font-black text-slate-400 uppercase tracking-widest leading-none block">Signature</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Back Side Preview */}
-                      <div className="flex flex-col items-center gap-3">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Face Arrière</p>
-                        <div className="relative w-[280px] h-[437px] bg-slate-900 rounded-[2rem] shadow-xl flex flex-col p-6 text-white text-left">
-                          <div className="flex justify-center mb-4 opacity-20">
-                            <Briefcase size={36} />
-                          </div>
-                          
-                          <h3 className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-3">Conditions d'Utilisation</h3>
-                          <div className="text-[6px] text-slate-400 leading-relaxed uppercase font-bold tracking-wider space-y-2">
-                            <p>1. Cette carte est strictement personnelle et incessible.</p>
-                            <p>2. Elle demeure la propriété exclusive de {settings?.companyName || "RIBERJO GLOBAL SERVICE"}.</p>
-                            <p>3. En cas de perte, le titulaire doit en informer immédiatement la direction.</p>
-                            <p>4. Elle doit être portée visiblement lors de l'exercice des fonctions.</p>
-                            <p>5. Toute utilisation frauduleuse expose son auteur à des poursuites.</p>
-                          </div>
-
-                          <div className="mt-auto space-y-4">
-                            <div className="bg-white/5 p-3 rounded-xl border border-white/10">
-                              <span className="text-[6px] font-black text-slate-500 uppercase tracking-widest mb-0.5 italic block">Contact d'Urgence</span>
-                              <span className="text-[8px] font-black uppercase tracking-widest block">+243 812 345 678</span>
+                          {/* Back Side (Verso) */}
+                          <div 
+                            className="absolute inset-0 w-full h-full bg-slate-900 rounded-[2rem] shadow-xl flex flex-col p-6 text-white text-left"
+                            style={{ 
+                              backfaceVisibility: "hidden",
+                              transform: "rotateY(180deg)"
+                            }}
+                          >
+                            <div className="flex justify-center mb-4 opacity-20">
+                              <Briefcase size={36} />
                             </div>
                             
-                            <div className="flex flex-col items-center gap-1.5">
-                              <div className="w-8 h-0.5 bg-emerald-500 rounded-full"></div>
-                              <span className="text-[6px] font-black text-slate-500 uppercase tracking-[0.3em] block">www.riberjo.com</span>
+                            <h3 className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-3">Conditions d'Utilisation</h3>
+                            <div className="text-[6px] text-slate-400 leading-relaxed uppercase font-bold tracking-wider space-y-2">
+                              <p>1. Cette carte est strictement personnelle et incessible.</p>
+                              <p>2. Elle demeure la propriété exclusive de {settings?.companyName || "RIBERJO GLOBAL SERVICE"}.</p>
+                              <p>3. En cas de perte, le titulaire doit en informer immédiatement la direction.</p>
+                              <p>4. Elle doit être portée visiblement lors de l'exercice des fonctions.</p>
+                              <p>5. Toute utilisation frauduleuse expose son auteur à des poursuites.</p>
+                            </div>
+
+                            <div className="mt-auto space-y-4">
+                              <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                                <span className="text-[6px] font-black text-slate-500 uppercase tracking-widest mb-0.5 italic block">Contact d'Urgence</span>
+                                <span className="text-[8px] font-black uppercase tracking-widest block">+243 812 345 678</span>
+                              </div>
+                              
+                              <div className="flex flex-col items-center gap-1.5">
+                                <div className="w-8 h-0.5 bg-emerald-500 rounded-full"></div>
+                                <span className="text-[6px] font-black text-slate-500 uppercase tracking-[0.3em] block">www.riberjo.com</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        </motion.div>
                       </div>
                     </div>
 
@@ -2259,13 +2421,348 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                               <span className="text-[7px] font-medium text-slate-450 uppercase tracking-normal leading-normal block">Scanner le code QR pour<br/>vérifier l'authenticité</span>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] block">Signature Officielle</span>
+                          <div className="text-right relative flex flex-col items-end justify-end w-32 h-16 text-slate-900">
+                            {/* Seal Stamp Overlay */}
+                            {settings?.dgSealUrl ? (
+                              <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-4 bottom-2 w-12 h-12 object-contain pointer-events-none opacity-85 rotate-12" />
+                            ) : (
+                              /* Generated seal SVG by default */
+                              <div className="absolute right-4 bottom-2 w-12 h-12 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
+                                <svg width="48" height="48" viewBox="0 0 100 100" className="text-red-600">
+                                  <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                                  <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                                  <path id="sealPathExportUsers" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                                  <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                    <textPath href="#sealPathExportUsers" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                                  </text>
+                                  <path id="sealPathExportUsersBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
+                                  <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
+                                    <textPath href="#sealPathExportUsersBottom" startOffset="50%" textAnchor="middle">DIRECTION GEN</textPath>
+                                  </text>
+                                  <text x="50" y="54" className="text-[10px] font-black fill-red-600 uppercase tracking-tighter" textAnchor="middle">SCEAU</text>
+                                </svg>
+                              </div>
+                            )}
+                            {/* Signature Overlay */}
+                            {settings?.dgSignatureUrl ? (
+                              <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-2 bottom-4 h-12 object-contain pointer-events-none max-w-[100px] z-10" />
+                            ) : (
+                              <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
+                            )}
+                            <span className="text-[8px] font-black text-slate-450 uppercase tracking-[0.2em] block z-10 mt-auto">{settings?.dgName || "Signature Officielle"}</span>
                           </div>
                         </div>
                       </div>
                     </div>
+                  </div>
+                ) : (
+                  /* DOCUMENTS RH BLOCK */
+                  <div className="space-y-8 py-4">
+                    {/* Document Header & Stats */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-900/40 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                          Contrats & Avenants de {selectedUser.fullName}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1 uppercase font-semibold tracking-wider">
+                          {userDocs.length} document{userDocs.length > 1 ? 's' : ''} enregistré{userDocs.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      
+                      {/* Search docs */}
+                      <div className="relative w-full sm:w-64">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <input
+                          type="text"
+                          placeholder="Rechercher un document..."
+                          value={documentSearchTerm}
+                          onChange={(e) => setDocumentSearchTerm(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white uppercase tracking-wider"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Upload Section - Only visible to HR department or ADMINS */}
+                    {(profile?.role === "ADMIN" || profile?.role === "SUPER_ADMIN" || profile?.departmentId === "RH") && (
+                      <form onSubmit={handleAddUserDocument} className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 space-y-4">
+                        <div className="flex items-center gap-2 mb-2 text-emerald-600 dark:text-emerald-400">
+                          <Plus size={16} />
+                          <span className="text-xs font-black uppercase tracking-widest">Ajouter un nouveau document RH</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1.5">
+                              Titre du Document
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ex: Contrat de travail, Avenant de salaire..."
+                              value={newDocTitle}
+                              onChange={(e) => setNewDocTitle(e.target.value)}
+                              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1.5">
+                              Type de Document
+                            </label>
+                            <select
+                              value={newDocType}
+                              onChange={(e) => setNewDocType(e.target.value as "contract" | "avenant")}
+                              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                            >
+                              <option value="contract">Contrat</option>
+                              <option value="avenant">Avenant</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-4 pt-2">
+                          <div className="w-full">
+                            <input
+                              type="file"
+                              id="doc-file-input"
+                              required
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  setSelectedFile(e.target.files[0]);
+                                }
+                              }}
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                              className="hidden"
+                            />
+                            <label
+                              htmlFor="doc-file-input"
+                              className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-xl text-xs font-bold text-slate-500 hover:text-emerald-600 transition-all cursor-pointer bg-slate-50 dark:bg-slate-800/50"
+                            >
+                              <FileText size={16} />
+                              {selectedFile ? (
+                                <span className="text-emerald-600 font-bold truncate max-w-xs">{selectedFile.name}</span>
+                              ) : (
+                                <span>Choisir un fichier (PDF, image, doc...)</span>
+                              )}
+                            </label>
+                          </div>
+                          
+                          <button
+                            type="submit"
+                            disabled={isDocUploading}
+                            className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 shrink-0"
+                          >
+                            {isDocUploading ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            ) : (
+                              <>
+                                <Plus size={14} />
+                                <span>Ajouter</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Document List */}
+                    {isDocsLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="w-8 h-8 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {userDocs
+                          .filter(d => d.title.toLowerCase().includes(documentSearchTerm.toLowerCase()))
+                          .length === 0 ? (
+                            <div className="text-center py-16 bg-slate-50 dark:bg-slate-900/20 rounded-[2rem] border border-slate-100 dark:border-slate-800 border-dashed">
+                              <FileText size={40} className="mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+                              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                                Aucun contrat ni avenant enregistré pour cet employé.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {userDocs
+                                .filter(d => d.title.toLowerCase().includes(documentSearchTerm.toLowerCase()))
+                                .map((docItem) => (
+                                  <div
+                                    key={docItem.id}
+                                    className="bg-white dark:bg-slate-900 p-5 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between hover:shadow-md transition-all group"
+                                  >
+                                    <div>
+                                      <div className="flex justify-between items-start mb-3">
+                                        <div className="flex items-center gap-2">
+                                          <div className={`p-2.5 rounded-xl ${
+                                            docItem.category === "contract" 
+                                              ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" 
+                                              : "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
+                                          }`}>
+                                            {docItem.category === "contract" ? <Shield size={16} /> : <FileText size={16} />}
+                                          </div>
+                                          <div>
+                                            <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${
+                                              docItem.category === "contract" 
+                                                ? "bg-blue-100/60 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400" 
+                                                : "bg-purple-100/60 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"
+                                            }`}>
+                                              {docItem.category === "contract" ? "Contrat" : "Avenant"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        
+                                        {(profile?.role === "ADMIN" || profile?.role === "SUPER_ADMIN" || profile?.departmentId === "RH") && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteUserDocument(docItem.id)}
+                                            className="p-1.5 hover:bg-red-50 hover:text-red-500 rounded-lg text-slate-400 transition-all opacity-0 group-hover:opacity-100"
+                                            title="Supprimer ce document"
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <h5 className="text-xs font-black text-slate-950 dark:text-white uppercase tracking-tight mb-1 line-clamp-2">
+                                        {docItem.title}
+                                      </h5>
+                                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-4">
+                                        Ajouté le {new Date(docItem.createdAt).toLocaleDateString("fr-FR")}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewDoc(docItem)}
+                                        className="flex-1 py-2.5 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-black text-[9px] uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1.5"
+                                      >
+                                        <Eye size={12} />
+                                        <span>Aperçu</span>
+                                      </button>
+                                      
+                                      <a
+                                        href={docItem.fileUrl}
+                                        download={docItem.title}
+                                        className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center"
+                                        title="Télécharger"
+                                      >
+                                        <Download size={12} />
+                                      </a>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                      </div>
+                    )}
+
+                    {/* Inline PDF / Image Preview Modal inside the Documents RH flow */}
+                    {previewDoc && (
+                      <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                        <div 
+                          className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+                          onClick={() => setPreviewDoc(null)}
+                        />
+                        <div className="relative w-full max-w-4xl h-[85vh] bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col z-[121]">
+                          <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
+                            <div>
+                              <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                                Aperçu : {previewDoc.title}
+                              </h4>
+                              <p className="text-[10px] text-slate-450 dark:text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+                                Matricule de l'employé : {previewDoc.userId}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDoc(null)}
+                              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all text-slate-400"
+                            >
+                              <X size={20} />
+                            </button>
+                          </div>
+                          
+                          <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-6 flex items-center justify-center overflow-auto">
+                            {previewDoc.fileUrl.startsWith("data:image/") || previewDoc.fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                              <img
+                                src={previewDoc.fileUrl}
+                                alt={previewDoc.title}
+                                className="max-h-full max-w-full object-contain rounded-xl shadow-md"
+                              />
+                            ) : previewDoc.fileUrl.startsWith("data:application/pdf") ? (
+                              <iframe
+                                src={previewDoc.fileUrl}
+                                title={previewDoc.title}
+                                className="w-full h-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white"
+                              />
+                            ) : (
+                              <div className="text-center p-8 bg-white dark:bg-slate-900 rounded-3xl max-w-md shadow-md border border-slate-100 dark:border-slate-800">
+                                <FileText size={48} className="mx-auto text-emerald-600 mb-4 animate-bounce" />
+                                <p className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight mb-2">
+                                  Format Aperçu non-interactif
+                                </p>
+                                <p className="text-xs text-slate-500 mb-6">
+                                  Ce type de document ne peut pas être affiché directement en ligne dans l'application. Vous pouvez néanmoins le télécharger pour le consulter localement sur votre ordinateur.
+                                </p>
+                                <a
+                                  href={previewDoc.fileUrl}
+                                  download={previewDoc.title}
+                                  className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-emerald-900/20"
+                                >
+                                  <Download size={14} />
+                                  Télécharger maintenant
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Sceau et Signature du DG validation footer */}
+                          <div className="p-6 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-2xl shrink-0">
+                                <Check size={18} />
+                              </div>
+                              <div className="text-left">
+                                <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight">Authentifié & Signé par la Direction Générale</p>
+                                <p className="text-[10px] text-slate-450 dark:text-slate-500 font-bold uppercase tracking-wider">Validité contractuelle légale et sceau numérique Riberjo</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-6">
+                              {/* Seal stamp */}
+                              <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
+                                {settings?.dgSealUrl ? (
+                                  <img src={settings.dgSealUrl} alt="Sceau Officiel" className="max-h-full max-w-full object-contain rotate-12 opacity-95" />
+                                ) : (
+                                  <div className="w-12 h-12 text-red-600 rotate-12 flex items-center justify-center">
+                                    <svg width="48" height="48" viewBox="0 0 100 100">
+                                      <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                                      <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                                      <path id="sealPathPreview" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                                      <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                        <textPath href="#sealPathPreview" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                                      </text>
+                                      <path id="sealPathPreviewBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
+                                      <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
+                                        <textPath href="#sealPathPreviewBottom" startOffset="50%" textAnchor="middle">DIRECTION</textPath>
+                                      </text>
+                                    </svg>
+                                  </div>
+                                )}
+                              </div>
+                              {/* Signature */}
+                              <div className="text-right flex flex-col items-end relative min-w-[100px]">
+                                {settings?.dgSignatureUrl ? (
+                                  <img src={settings.dgSignatureUrl} alt="Signature Officielle" className="h-10 object-contain pointer-events-none mb-1 max-w-[120px]" />
+                                ) : (
+                                  <div className="h-6 w-20 border-b border-slate-300 dark:border-slate-700 mb-1 opacity-40"></div>
+                                )}
+                                <p className="text-[9px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">{settings?.dgName || "Directeur Général"}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

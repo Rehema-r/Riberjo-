@@ -180,6 +180,9 @@ export interface AppSettings {
   logoUrl?: string;
   defaultRegistrationRole: UserRole;
   allowSelfRegistration: boolean;
+  dgSignatureUrl?: string;
+  dgSealUrl?: string;
+  dgName?: string;
   updatedAt: number;
 }
 

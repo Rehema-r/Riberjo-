@@ -64,6 +64,10 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
   const { profile, roleLabel } = useAuth();
   const logoInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
+  const sigFileInputRef = useRef<HTMLInputElement>(null);
+  const sealFileInputRef = useRef<HTMLInputElement>(null);
+  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'system'>(
     initialTab === 'system' && profile?.role !== 'SUPER_ADMIN' ? 'profile' : initialTab
   );
@@ -171,6 +175,105 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
       setCropperType('profile');
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert("L'image est trop volumineuse (max 2 Mo).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSettings(prev => ({ ...prev, dgSignatureUrl: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSealUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert("L'image est trop volumineuse (max 2 Mo).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSettings(prev => ({ ...prev, dgSealUrl: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.strokeStyle = '#0284c7'; // Nice deep sky blue or dark slate
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+    if ('touches' in e) {
+      if (e.touches.length === 0) return;
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+    if ('touches' in e) {
+      if (e.cancelable) e.preventDefault();
+      if (e.touches.length === 0) return;
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearSignatureCanvas = () => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const saveSignatureFromCanvas = () => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL('image/png');
+    setSettings(prev => ({ ...prev, dgSignatureUrl: dataUrl }));
+    setSuccess("Signature virtuelle générée avec succès ! N'oubliez pas d'enregistrer les paramètres globaux.");
+    setTimeout(() => setSuccess(null), 4000);
   };
 
   const onCropComplete = async (croppedImage: string) => {
@@ -774,9 +877,34 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                           <p className="text-[5px] font-bold text-slate-450 uppercase tracking-normal leading-tight">Scanner pour<br/>l'authenticité</p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="h-10 w-24 border-b-2 border-slate-900 mb-1 opacity-20"></div>
-                        <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest leading-none">Signature Direction</p>
+                      <div className="text-right relative flex flex-col items-end justify-end w-28 h-12">
+                        {/* Seal Stamp Overlay */}
+                        {settings.dgSealUrl ? (
+                          <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-2 bottom-1 w-8 h-8 object-contain pointer-events-none opacity-85 rotate-12" />
+                        ) : (
+                          /* Generated seal SVG by default */
+                          <div className="absolute right-2 bottom-1 w-8 h-8 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
+                            <svg width="32" height="32" viewBox="0 0 100 100" className="text-red-600">
+                              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                              <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                              <path id="sealPathInteractiveSettings" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                              <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                <textPath href="#sealPathInteractiveSettings" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                              </text>
+                              <path id="sealPathInteractiveSettingsBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
+                              <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
+                                <textPath href="#sealPathInteractiveSettingsBottom" startOffset="50%" textAnchor="middle">DIRECTION</textPath>
+                              </text>
+                            </svg>
+                          </div>
+                        )}
+                        {/* Signature Overlay */}
+                        {settings.dgSignatureUrl ? (
+                          <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-1 bottom-2 h-8 object-contain pointer-events-none max-w-[64px] z-10" />
+                        ) : (
+                          <div className="h-6 w-16 border-b border-slate-900 mb-0.5 opacity-20"></div>
+                        )}
+                        <p className="text-[5px] font-black text-slate-400 uppercase tracking-widest leading-none z-10 mt-auto">{settings.dgName || "Signature Direction"}</p>
                       </div>
                     </div>
                   </div>
@@ -883,9 +1011,35 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                                 <p className="text-[7px] font-medium text-slate-400 uppercase tracking-normal leading-normal">Scanner le code QR pour<br/>vérifier l'authenticité</p>
                             </div>
                         </div>
-                        <div className="text-right">
-                            <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Signature Officielle</p>
+                        <div className="text-right relative flex flex-col items-end justify-end w-32 h-16 text-slate-900">
+                            {/* Seal Stamp Overlay */}
+                            {settings.dgSealUrl ? (
+                              <img src={settings.dgSealUrl} alt="Sceau" className="absolute right-4 bottom-2 w-12 h-12 object-contain pointer-events-none opacity-85 rotate-12" />
+                            ) : (
+                              /* Generated seal SVG by default */
+                              <div className="absolute right-4 bottom-2 w-12 h-12 opacity-80 pointer-events-none rotate-12 flex items-center justify-center">
+                                <svg width="48" height="48" viewBox="0 0 100 100" className="text-red-600">
+                                  <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                                  <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                                  <path id="sealPathExportSettings" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                                  <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                    <textPath href="#sealPathExportSettings" startOffset="50%" textAnchor="middle">RIBERJO</textPath>
+                                  </text>
+                                  <path id="sealPathExportSettingsBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
+                                  <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
+                                    <textPath href="#sealPathExportSettingsBottom" startOffset="50%" textAnchor="middle">DIRECTION GEN</textPath>
+                                  </text>
+                                  <text x="50" y="54" className="text-[10px] font-black fill-red-600 uppercase tracking-tighter" textAnchor="middle">SCEAU</text>
+                                </svg>
+                              </div>
+                            )}
+                            {/* Signature Overlay */}
+                            {settings.dgSignatureUrl ? (
+                              <img src={settings.dgSignatureUrl} alt="Signature DG" className="absolute right-2 bottom-4 h-12 object-contain pointer-events-none max-w-[100px] z-10" />
+                            ) : (
+                              <div className="h-12 w-32 border-b-2 border-slate-900 mb-2 opacity-30"></div>
+                            )}
+                            <p className="text-[8px] font-black text-slate-450 uppercase tracking-[0.2em] leading-none z-10 mt-auto">{settings.dgName || "Signature Officielle"}</p>
                         </div>
                     </div>
                 </div>
@@ -1082,6 +1236,175 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                         <div className="flex gap-4">
                            <input type="color" value={settings.primaryColor} onChange={(e) => setSettings({...settings, primaryColor: e.target.value})} className="w-14 h-14 bg-white dark:bg-slate-800 p-1 rounded-xl cursor-pointer" />
                            <input type="text" value={settings.primaryColor} onChange={(e) => setSettings({...settings, primaryColor: e.target.value})} className="flex-1 px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white" />
+                        </div>
+                     </div>
+                  </div>
+                </div>
+
+                {/* Section Signature & Sceau Virtuel du DG */}
+                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="flex items-center gap-3 mb-8">
+                    <div className="p-3 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-2xl">
+                      <Save size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900 dark:text-white">Signature & Sceau de la Direction Générale</h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Configurez les éléments officiels de validation utilisés pour les badges et documents RH.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                     {/* Colonne Gauche : Nom du DG & Sceau Virtuel */}
+                     <div className="space-y-6">
+                        <div>
+                           <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Nom / Titre du Directeur Général</label>
+                           <input 
+                             type="text" 
+                             value={settings.dgName || ''} 
+                             onChange={(e) => setSettings({...settings, dgName: e.target.value})} 
+                             placeholder="ex: Le Directeur Général, ou M. Jean-Paul Riberjo"
+                             className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white font-bold" 
+                           />
+                        </div>
+
+                        <div>
+                           <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Sceau Officiel de l'Entreprise</label>
+                           <p className="text-[10px] text-slate-400 mb-3 italic">Importez une image circulaire transparente, ou utilisez le sceau numérique d'authentification par défaut de la plateforme.</p>
+                           
+                           <div className="flex flex-col sm:flex-row gap-6 items-center p-4 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-100 dark:border-slate-800">
+                              <div className="w-24 h-24 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center overflow-hidden border border-slate-250 dark:border-slate-700 shadow-md p-1 relative">
+                                 {settings.dgSealUrl ? (
+                                    <img src={settings.dgSealUrl} alt="Sceau" className="w-full h-full object-contain" />
+                                 ) : (
+                                    <div className="flex items-center justify-center w-full h-full text-red-600 rotate-12">
+                                       <svg width="64" height="64" viewBox="0 0 100 100">
+                                         <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="4" />
+                                         <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3,3" />
+                                         <path id="sealPathSettings" d="M 15 50 A 35 35 0 0 1 85 50" fill="none" stroke="none" />
+                                         <text className="text-[10px] font-black fill-red-600 uppercase tracking-widest">
+                                           <textPath href="#sealPathSettings" startOffset="50%" textAnchor="middle">{settings.companyName || "RIBERJO"}</textPath>
+                                         </text>
+                                         <path id="sealPathSettingsBottom" d="M 85 50 A 35 35 0 0 1 15 50" fill="none" stroke="none" />
+                                         <text className="text-[7.5px] font-black fill-red-600 uppercase tracking-tight">
+                                           <textPath href="#sealPathSettingsBottom" startOffset="50%" textAnchor="middle">DIRECTION GEN</textPath>
+                                         </text>
+                                         <text x="50" y="54" className="text-[10px] font-black fill-red-600 uppercase tracking-tighter" textAnchor="middle">OFFICIEL</text>
+                                       </svg>
+                                    </div>
+                                 )}
+                              </div>
+
+                              <div className="flex-1 space-y-2 w-full">
+                                 <input 
+                                   type="file" 
+                                   ref={sealFileInputRef}
+                                   onChange={handleSealUpload}
+                                   accept="image/*"
+                                   className="hidden" 
+                                 />
+                                 <button 
+                                   type="button"
+                                   onClick={() => sealFileInputRef.current?.click()}
+                                   className="w-full py-3 bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+                                 >
+                                    <Upload size={14} />
+                                    Importer un tampon (.png)
+                                 </button>
+                                 {settings.dgSealUrl && (
+                                    <button 
+                                       type="button"
+                                       onClick={() => setSettings({...settings, dgSealUrl: ''})}
+                                       className="w-full py-2 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-100 transition-all"
+                                    >
+                                       Réinitialiser au sceau par défaut
+                                    </button>
+                                 )}
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* Colonne Droite : Signature Dessinée ou Upload */}
+                     <div className="space-y-6">
+                        <div>
+                           <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Signature Manuscrite Numérique</label>
+                           
+                           {/* Drawing canvas signature pad */}
+                           <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-100 dark:border-slate-800">
+                              <p className="text-[10px] text-slate-400 mb-2 italic">Dessinez directement ci-dessous ou importez une image transparente de votre signature.</p>
+                              
+                              <div className="relative border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 h-32 flex items-center justify-center">
+                                 <canvas 
+                                   ref={signatureCanvasRef}
+                                   width={320}
+                                   height={120}
+                                   onMouseDown={startDrawing}
+                                   onMouseMove={draw}
+                                   onMouseUp={stopDrawing}
+                                   onMouseLeave={stopDrawing}
+                                   onTouchStart={startDrawing}
+                                   onTouchMove={draw}
+                                   onTouchEnd={stopDrawing}
+                                   className="w-full h-full cursor-crosshair touch-none"
+                                 />
+                              </div>
+
+                              <div className="flex gap-2 mt-3">
+                                 <button
+                                   type="button"
+                                   onClick={clearSignatureCanvas}
+                                   className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-slate-200 transition-all"
+                                 >
+                                    Effacer tracé
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={saveSignatureFromCanvas}
+                                   className="flex-1 py-2 bg-sky-600 text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-sky-700 transition-all shadow-md shadow-sky-500/10"
+                                 >
+                                    Valider tracé
+                                 </button>
+                              </div>
+                           </div>
+
+                           {/* Upload signature alternative */}
+                           <div className="mt-4 flex gap-4 items-center p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                              <div className="w-20 h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center p-1 overflow-hidden shrink-0">
+                                 {settings.dgSignatureUrl ? (
+                                    <img src={settings.dgSignatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
+                                 ) : (
+                                    <span className="text-[8px] font-bold text-slate-350 uppercase">Vide</span>
+                                 )}
+                              </div>
+                              <div className="flex-1">
+                                 <input 
+                                   type="file" 
+                                   ref={sigFileInputRef}
+                                   onChange={handleSignatureUpload}
+                                   accept="image/*"
+                                   className="hidden" 
+                                 />
+                                 <div className="flex gap-2">
+                                    <button 
+                                      type="button"
+                                      onClick={() => sigFileInputRef.current?.click()}
+                                      className="flex-1 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5"
+                                    >
+                                       <Upload size={12} />
+                                       Uploader Image
+                                    </button>
+                                    {settings.dgSignatureUrl && (
+                                       <button 
+                                          type="button"
+                                          onClick={() => setSettings({...settings, dgSignatureUrl: ''})}
+                                          className="px-3 py-2 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-lg text-[9px] font-black uppercase hover:bg-red-100 transition-all"
+                                       >
+                                          Effacer
+                                       </button>
+                                    )}
+                                 </div>
+                              </div>
+                           </div>
                         </div>
                      </div>
                   </div>
