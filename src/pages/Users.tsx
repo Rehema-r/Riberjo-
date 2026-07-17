@@ -34,9 +34,12 @@ import {
   KeyRound,
   Plus,
   Eye,
+  Camera,
+  Scissors,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
+import ImageCropper from "../components/ImageCropper";
 import {
   DEPARTMENTS,
   SERVICES_LIST,
@@ -102,6 +105,50 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
   const [isExporting, setIsExporting] = useState(false);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
   const cardRef = React.useRef<HTMLDivElement>(null);
+
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [cropperType, setCropperType] = useState<'cardPhoto' | null>(null);
+
+  const handleCardPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("L'image est trop volumineuse (max 2 Mo).");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImageToCrop(reader.result as string);
+      setCropperType('cardPhoto');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const onCropComplete = async (croppedImage: string) => {
+    if (!selectedUser) return;
+    try {
+      setIsExporting(true);
+      const userRef = doc(db, "users", selectedUser.id);
+      await updateDoc(userRef, { cardPhotoUrl: croppedImage });
+      
+      const updatedUser = { ...selectedUser, cardPhotoUrl: croppedImage };
+      setSelectedUser(updatedUser);
+      setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+
+      setShowToast({ show: true, message: "Photo de la carte mise à jour avec succès !" });
+      setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
+    } catch (err) {
+      console.error(err);
+      setShowToast({ show: true, message: "Erreur lors de la mise à jour de la photo de la carte." });
+      setTimeout(() => setShowToast({ show: false, message: "" }), 3000);
+    } finally {
+      setIsExporting(false);
+      setImageToCrop(null);
+      setCropperType(null);
+    }
+  };
 
   // States for HR Document Management
   const [userDocs, setUserDocs] = useState<AppDocument[]>([]);
@@ -2167,11 +2214,34 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                   /* CARTE DE SERVICE PREVIEW AND ACTIONS */
                   <div className="flex flex-col items-center justify-center gap-6 py-4">
                     <div className="flex flex-col sm:flex-row gap-4 w-full">
+                       <style>{`
+                         @media print {
+                           body * { visibility: hidden; }
+                           .no-print { display: none !important; }
+                           #service-card-front-export-user, #service-card-back-export-user { 
+                             visibility: visible; 
+                             position: relative;
+                             display: block !important;
+                             opacity: 1 !important;
+                             margin: 30px auto;
+                             page-break-inside: avoid;
+                           }
+                         }
+                       `}</style>
+                       <button 
+                         type="button"
+                         onClick={() => window.print()}
+                         className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black uppercase tracking-wider rounded-2xl transition-all active:scale-95 shadow-sm"
+                         title="Imprimer la carte de service"
+                       >
+                         <Printer size={16} />
+                         <span>Imprimer</span>
+                       </button>
                        <button 
                          type="button"
                          onClick={handleDownloadCard}
                          disabled={isExporting}
-                         className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-xl shadow-emerald-500/15 ${
+                         className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-xl shadow-emerald-500/15 ${
                            isExporting 
                              ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 cursor-not-allowed' 
                              : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-500/30'
@@ -2221,12 +2291,29 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                             <div className="mt-20 flex flex-col items-center">
                               <div className="w-28 h-28 bg-slate-50 rounded-[30px] p-1 shadow-md border border-slate-100 relative">
                                 <div className="w-full h-full rounded-[24px] overflow-hidden bg-slate-200 flex items-center justify-center">
-                                  {selectedUser.avatarUrl ? (
+                                  {selectedUser.cardPhotoUrl ? (
+                                    <img src={selectedUser.cardPhotoUrl} alt="Card" className="w-full h-full object-cover animate-fade-in" />
+                                  ) : selectedUser.avatarUrl ? (
                                     <img src={selectedUser.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
                                   ) : (
                                     <User size={48} className="text-slate-400" />
                                   )}
                                 </div>
+                                {isDGOrHR && (
+                                  <label 
+                                    className="absolute -bottom-1 -right-1 p-2 bg-emerald-600 text-white rounded-xl shadow-lg cursor-pointer hover:bg-emerald-700 transition-all hover:scale-110 active:scale-95 border border-white dark:border-slate-800 flex items-center justify-center" 
+                                    title="Prendre/Changer la photo de la carte"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Camera size={14} />
+                                    <input 
+                                      type="file" 
+                                      accept="image/*"
+                                      onChange={handleCardPhotoUpload}
+                                      className="sr-only"
+                                    />
+                                  </label>
+                                )}
                               </div>
                             </div>
 
@@ -2378,7 +2465,9 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                           <div className="flex flex-col items-center gap-4 shrink-0">
                             <div className="w-[200px] h-[200px] bg-slate-50 rounded-[2rem] p-2 shadow-xl border-2 border-slate-100 relative overflow-hidden">
                               <div className="w-full h-full rounded-[1.5rem] overflow-hidden bg-slate-100">
-                                {selectedUser.avatarUrl ? (
+                                {selectedUser.cardPhotoUrl ? (
+                                  <img src={selectedUser.cardPhotoUrl} alt="Card" className="w-full h-full object-cover" />
+                                ) : selectedUser.avatarUrl ? (
                                   <img src={selectedUser.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center text-slate-300">
@@ -2959,6 +3048,21 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {imageToCrop && cropperType === 'cardPhoto' && (
+          <ImageCropper
+            image={imageToCrop}
+            onCropComplete={onCropComplete}
+            onCancel={() => {
+              setImageToCrop(null);
+              setCropperType(null);
+            }}
+            aspect={1}
+            circular={false}
+          />
         )}
       </AnimatePresence>
     </div>

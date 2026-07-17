@@ -832,7 +832,9 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                       <div className="flex flex-col items-center gap-2 shrink-0">
                         <div className="w-[100px] h-[100px] bg-slate-50 rounded-2xl p-1 shadow-md border border-slate-100 relative overflow-hidden">
                           <div className="w-full h-full rounded-[12px] overflow-hidden bg-slate-100">
-                            {profileData.avatarUrl ? (
+                            {profile?.cardPhotoUrl ? (
+                              <img src={profile.cardPhotoUrl} alt="Card" className="w-full h-full object-cover" />
+                            ) : profileData.avatarUrl ? (
                               <img src={profileData.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-slate-300">
@@ -998,7 +1000,9 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                     <div className="flex flex-col items-center gap-4 shrink-0">
                       <div className="w-[200px] h-[200px] bg-slate-50 rounded-[2rem] p-2 shadow-xl border-2 border-slate-100 relative overflow-hidden">
                         <div className="w-full h-full rounded-[1.5rem] overflow-hidden bg-slate-100">
-                          {profileData.avatarUrl ? (
+                          {profile?.cardPhotoUrl ? (
+                            <img src={profile.cardPhotoUrl} alt="Card" className="w-full h-full object-cover" />
+                          ) : profileData.avatarUrl ? (
                             <img src={profileData.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-slate-300">

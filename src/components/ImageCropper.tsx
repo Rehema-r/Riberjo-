@@ -137,24 +137,24 @@ export default function ImageCropper({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+        className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2rem] shadow-2xl flex flex-col max-h-[95vh] overflow-y-auto sm:overflow-hidden"
       >
-        <div className="p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
+        <div className="p-4 sm:p-5 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 rounded-lg">
-              <Scissors size={20} />
+              <Scissors size={18} />
             </div>
-            <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Ajuster la photo</h3>
+            <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">Ajuster la photo</h3>
           </div>
           <button 
             onClick={onCancel}
             className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
-        <div className="relative w-full h-[280px] sm:h-[320px] md:h-[350px] bg-slate-50 dark:bg-slate-950">
+        <div className="relative w-full h-[220px] sm:h-[260px] md:h-[280px] bg-slate-50 dark:bg-slate-950 shrink-0">
           <Cropper
             image={image}
             crop={crop}
@@ -169,8 +169,8 @@ export default function ImageCropper({
           />
         </div>
 
-        <div className="p-5 md:p-6 space-y-4 md:space-y-6">
-          <div className="space-y-4">
+        <div className="p-4 sm:p-5 space-y-4 flex-1 flex flex-col justify-between overflow-y-auto sm:overflow-visible">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Zoom</span>
               <span className="text-[10px] font-black text-slate-900 dark:text-white">{Math.round(zoom * 100)}%</span>
@@ -187,37 +187,37 @@ export default function ImageCropper({
             />
           </div>
 
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex gap-2">
+          <div className="flex items-center justify-between gap-4 pt-2">
+            <div className="flex gap-2 shrink-0">
               <button
                 onClick={onRotationCcwChange}
-                className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                className="p-2.5 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
                 title="Pivoter à gauche"
               >
-                <RotateCcw size={16} />
+                <RotateCcw size={15} />
               </button>
               <button
                 onClick={onRotationChange}
-                className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                className="p-2.5 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
                 title="Pivoter à droite"
               >
-                <RotateCw size={16} />
+                <RotateCw size={15} />
               </button>
             </div>
 
             <div className="flex flex-1 gap-2">
               <button
                 onClick={onCancel}
-                className="flex-1 py-4 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all"
+                className="flex-1 py-3 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all"
               >
                 Annuler
               </button>
               <button
                 onClick={handleDone}
-                className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                className="flex-[2] py-3 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 hover:bg-emerald-700 shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
               >
-                <Check size={16} />
-                Confirmer & Enregistrer
+                <Check size={14} />
+                Confirmer
               </button>
             </div>
           </div>

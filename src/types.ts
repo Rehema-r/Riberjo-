@@ -89,6 +89,7 @@ export interface UserProfile {
   qrCode?: string;
   baseSalary?: number;
   avatarUrl?: string;
+  cardPhotoUrl?: string;
   password?: string;
 }
 

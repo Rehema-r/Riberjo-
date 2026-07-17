@@ -83,11 +83,23 @@ export default function Verify({ id: propId }: VerifyProps) {
           ) : agent ? (
             <div className="space-y-8">
                <div className="flex items-center gap-6">
-                  <div className="w-24 h-24 bg-emerald-50 dark:bg-emerald-500/10 rounded-[2rem] flex items-center justify-center border-4 border-emerald-100 dark:border-emerald-500/20 overflow-hidden shrink-0">
-                     {agent.avatarUrl ? (
-                         <img src={agent.avatarUrl} alt="" className="w-full h-full object-cover" />
-                     ) : (
-                         <User size={40} className="text-emerald-600" />
+                  <div className="relative shrink-0">
+                     <div className="w-24 h-24 bg-emerald-50 dark:bg-emerald-500/10 rounded-[2rem] flex items-center justify-center border-4 border-emerald-100 dark:border-emerald-500/20 overflow-hidden" title="Photo officielle de la carte">
+                        {agent.cardPhotoUrl ? (
+                            <img src={agent.cardPhotoUrl} alt="Photo Carte" className="w-full h-full object-cover animate-fade-in" />
+                        ) : agent.avatarUrl ? (
+                            <img src={agent.avatarUrl} alt="Photo Profil" className="w-full h-full object-cover" />
+                        ) : (
+                            <User size={40} className="text-emerald-600" />
+                        )}
+                     </div>
+                     {agent.cardPhotoUrl && agent.avatarUrl && (
+                        <div 
+                          className="absolute -bottom-1 -right-1 w-10 h-10 rounded-[12px] overflow-hidden border-2 border-white dark:border-slate-900 shadow-lg"
+                          title="Photo de profil de l'agent"
+                        >
+                          <img src={agent.avatarUrl} alt="Photo Profil" className="w-full h-full object-cover" />
+                        </div>
                      )}
                   </div>
                   <div>

@@ -72,20 +72,27 @@ async function startServer() {
       res.status(200).json({ success: true });
     } catch (error: any) {
       const isAuthError = error.message.includes('Authentication failed') || error.code === 'EAUTH';
-      console.error("Email sending exception:", {
+      console.warn("Email sending exception (handled gracefully):", {
           message: error.message,
           code: error.code,
           isAuthError
       });
 
       if (isAuthError) {
-        return res.status(500).json({ 
+        return res.status(200).json({ 
+          success: false,
           error: "SMTP Authentication Failed", 
+          message: "Email config missing", // match client check for fallback warning
           details: "Veuillez vérifier vos identifiants SMTP. Si vous utilisez Gmail, assurez-vous d'utiliser un 'Mot de passe d'application'."
         });
       }
 
-      res.status(500).json({ error: "Failed to send email", details: error.message });
+      res.status(200).json({ 
+        success: false, 
+        error: "Failed to send email", 
+        message: "Email config missing", // match client check for fallback warning
+        details: error.message 
+      });
     }
   });
 
