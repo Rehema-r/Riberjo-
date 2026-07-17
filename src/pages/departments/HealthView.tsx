@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Stethoscope, Heart, Users, Activity, Plus, ShieldAlert, History, Search, ArrowUpDown, Box, HeartPulse, ListTodo, FolderHeart, Send, Thermometer } from 'lucide-react';
+import { Stethoscope, Heart, Users, Activity, Plus, ShieldAlert, History, Search, ArrowUpDown, Box, HeartPulse, ListTodo, FolderHeart, Send, Thermometer, Calendar, Truck, AlertTriangle, TrendingUp, Clock, ShieldCheck } from 'lucide-react';
 import { collection, addDoc, query, orderBy, onSnapshot, limit, updateDoc, doc, where, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -21,8 +21,55 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
   const { profile } = useAuth();
   const isGrantedExpertWrite = profile?.role !== 'USER' && profile?.role !== 'BOARD_MEMBER';
   
-  // Tabs: 'records' for Medical dossiers, 'inventory' for Pharmacy stock
-  const [activeTab, setActiveTab] = useState<'records' | 'inventory'>('records');
+  // Tabs: 'records' for Medical dossiers, 'inventory' for Pharmacy stock, etc.
+  const [activeTab, setActiveTab] = useState<'records' | 'inventory' | 'campaigns' | 'evacuations' | 'roster' | 'epidemiology'>('records');
+
+  // State variables for the 4 new proposals:
+  // 1. Campaigns & Prevention
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [showAddCampaignModal, setShowAddCampaignModal] = useState(false);
+  const [newCampaign, setNewCampaign] = useState({
+    title: '',
+    type: 'Vaccination',
+    targetAudience: 'Tout public',
+    startDate: '',
+    endDate: '',
+    description: '',
+    status: 'Planifié'
+  });
+
+  // 2. Medical Evacuations & Emergencies
+  const [evacuations, setEvacuations] = useState<any[]>([]);
+  const [showAddEvacuationModal, setShowAddEvacuationModal] = useState(false);
+  const [newEvacuation, setNewEvacuation] = useState({
+    patientName: '',
+    destinationHospital: '',
+    severity: 'Haute d\'urgence',
+    reason: '',
+    ambulanceCode: '',
+    status: 'En cours de transfert'
+  });
+
+  // 3. Practitioner Duty Roster
+  const [roster, setRoster] = useState<any[]>([]);
+  const [showAddRosterModal, setShowAddRosterModal] = useState(false);
+  const [newRosterItem, setNewRosterItem] = useState({
+    staffName: '',
+    staffRole: 'Médecin',
+    date: '',
+    shift: 'Garde de Jour'
+  });
+
+  // 4. Epidemiological Indicator Alerts
+  const [epidemicAlerts, setEpidemicAlerts] = useState<any[]>([]);
+  const [showAddEpidemicModal, setShowAddEpidemicModal] = useState(false);
+  const [newEpidemicAlert, setNewEpidemicAlert] = useState({
+    disease: 'Paludisme',
+    suspectedCases: 1,
+    severityLevel: 'Modéré',
+    actionsTaken: '',
+    alertActive: true
+  });
 
   // Medical Consultation states
   const [records, setRecords] = useState<MedicalRecord[]>([]);
@@ -166,6 +213,157 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
       unsubscribeTrans();
     };
   }, []);
+
+  useEffect(() => {
+    // 1. Listen to campaigns
+    const qC = query(collection(db, 'health_campaigns'), orderBy('createdAt', 'desc'), limit(30));
+    const unsubscribeC = onSnapshot(qC, (snapshot) => {
+      setCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      console.warn("health_campaigns subscription fallback:", err.message);
+    });
+
+    // 2. Listen to evacuations
+    const qE = query(collection(db, 'health_evacuations'), orderBy('createdAt', 'desc'), limit(30));
+    const unsubscribeE = onSnapshot(qE, (snapshot) => {
+      setEvacuations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      console.warn("health_evacuations subscription fallback:", err.message);
+    });
+
+    // 3. Listen to roster
+    const qR = query(collection(db, 'health_roster'), orderBy('createdAt', 'desc'), limit(30));
+    const unsubscribeR = onSnapshot(qR, (snapshot) => {
+      setRoster(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      console.warn("health_roster subscription fallback:", err.message);
+    });
+
+    // 4. Listen to epidemic alerts
+    const qEp = query(collection(db, 'health_epidemic_alerts'), orderBy('createdAt', 'desc'), limit(30));
+    const unsubscribeEp = onSnapshot(qEp, (snapshot) => {
+      setEpidemicAlerts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      console.warn("health_epidemic_alerts subscription fallback:", err.message);
+    });
+
+    return () => {
+      unsubscribeC();
+      unsubscribeE();
+      unsubscribeR();
+      unsubscribeEp();
+    };
+  }, []);
+
+  const handleAddCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    try {
+      await addDoc(collection(db, 'health_campaigns'), {
+        ...newCampaign,
+        createdBy: profile.fullName,
+        createdAt: Date.now()
+      });
+      setShowAddCampaignModal(false);
+      setNewCampaign({
+        title: '',
+        type: 'Vaccination',
+        targetAudience: 'Tout public',
+        startDate: '',
+        endDate: '',
+        description: '',
+        status: 'Planifié'
+      });
+      alert("Campagne de prévention ajoutée avec succès !");
+    } catch (err) {
+      console.error("Error adding campaign:", err);
+    }
+  };
+
+  const handleAddEvacuation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    try {
+      await addDoc(collection(db, 'health_evacuations'), {
+        ...newEvacuation,
+        reportedBy: profile.fullName,
+        createdAt: Date.now()
+      });
+      setShowAddEvacuationModal(false);
+      setNewEvacuation({
+        patientName: '',
+        destinationHospital: '',
+        severity: 'Haute d\'urgence',
+        reason: '',
+        ambulanceCode: '',
+        status: 'En cours de transfert'
+      });
+      alert("Évacuation sanitaire enregistrée avec succès !");
+    } catch (err) {
+      console.error("Error adding evacuation:", err);
+    }
+  };
+
+  const handleUpdateEvacuationStatus = async (id: string, status: string) => {
+    try {
+      await updateDoc(doc(db, 'health_evacuations', id), { status });
+    } catch (err) {
+      console.error("Error updating evacuation status:", err);
+    }
+  };
+
+  const handleAddRoster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    try {
+      await addDoc(collection(db, 'health_roster'), {
+        ...newRosterItem,
+        createdBy: profile.fullName,
+        createdAt: Date.now()
+      });
+      setShowAddRosterModal(false);
+      setNewRosterItem({
+        staffName: '',
+        staffRole: 'Médecin',
+        date: '',
+        shift: 'Garde de Jour'
+      });
+      alert("Planning de garde enregistré avec succès !");
+    } catch (err) {
+      console.error("Error adding roster:", err);
+    }
+  };
+
+  const handleAddEpidemicAlert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    try {
+      await addDoc(collection(db, 'health_epidemic_alerts'), {
+        ...newEpidemicAlert,
+        declaredBy: profile.fullName,
+        createdAt: Date.now()
+      });
+      setShowAddEpidemicModal(false);
+      setNewEpidemicAlert({
+        disease: 'Paludisme',
+        suspectedCases: 1,
+        severityLevel: 'Modéré',
+        actionsTaken: '',
+        alertActive: true
+      });
+      alert("Alerte épidémique enregistrée avec succès !");
+    } catch (err) {
+      console.error("Error adding epidemic alert:", err);
+    }
+  };
+
+  const handleToggleEpidemicAlert = async (id: string, alertActive: boolean) => {
+    try {
+      await updateDoc(doc(db, 'health_epidemic_alerts', id), { alertActive });
+    } catch (err) {
+      console.error("Error toggling alert:", err);
+    }
+  };
 
   const handleAddRecord = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -507,63 +705,132 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
       ) : (
         /* Original Expert Doctor and Pharmacy layout */
         <>
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 pb-4">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4">
             <div>
               <h1 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Département Santé</h1>
-              <p className="text-slate-500 font-medium font-sans">Espace Expert : Consultations médicales, diagnostics et contrôle de la pharmacie globale.</p>
+              <p className="text-slate-500 font-medium font-sans">Espace Expert : Consultations médicales, diagnostics, pharmacie globale et activités de prévention.</p>
             </div>
             
-            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
               {/* Segmented Tab Selectors */}
-              <div className="bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl flex gap-1 shadow-sm w-full sm:w-auto justify-center">
+              <div className="bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl flex flex-wrap gap-1 shadow-sm justify-center">
                 <button
                   onClick={() => setActiveTab('records')}
-                  className={`flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
                     activeTab === 'records'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
                   }`}
                 >
-                  <Stethoscope size={14} /> Consultations
+                  <Stethoscope size={12} /> Consultations
                 </button>
                 <button
                   onClick={() => setActiveTab('inventory')}
-                  className={`flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
                     activeTab === 'inventory'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
                   }`}
                 >
-                  <Activity size={14} /> Pharmacie & Stocks
+                  <Activity size={12} /> Pharmacie
+                </button>
+                <button
+                  onClick={() => setActiveTab('campaigns')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                    activeTab === 'campaigns'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                  }`}
+                >
+                  <Calendar size={12} /> Campagnes
+                </button>
+                <button
+                  onClick={() => setActiveTab('evacuations')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                    activeTab === 'evacuations'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                  }`}
+                >
+                  <Truck size={12} /> Évacuations
+                </button>
+                <button
+                  onClick={() => setActiveTab('roster')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                    activeTab === 'roster'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                  }`}
+                >
+                  <Clock size={12} /> Plannings
+                </button>
+                <button
+                  onClick={() => setActiveTab('epidemiology')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                    activeTab === 'epidemiology'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                  }`}
+                >
+                  <TrendingUp size={12} /> Épidémiologie
                 </button>
               </div>
 
-              {activeTab === 'records' ? (
-                isGrantedExpertWrite ? (
-                  <button 
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 w-full sm:w-auto justify-center"
-                  >
-                    <Plus size={16} /> Nouvelle Consultation
-                  </button>
-                ) : (
-                  <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl font-bold text-[10px] uppercase tracking-widest border border-slate-200/50">
-                    🔐 (Lecture Seule)
-                  </div>
-                )
+              {isGrantedExpertWrite ? (
+                <>
+                  {activeTab === 'records' && (
+                    <button 
+                      onClick={() => setShowAddModal(true)}
+                      className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 justify-center"
+                    >
+                      <Plus size={14} /> Nouvelle Consultation
+                    </button>
+                  )}
+                  {activeTab === 'inventory' && (
+                    <button 
+                      onClick={() => setShowAddInventoryModal(true)}
+                      className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 justify-center"
+                    >
+                      <Plus size={14} /> Ajouter une Référence
+                    </button>
+                  )}
+                  {activeTab === 'campaigns' && (
+                    <button 
+                      onClick={() => setShowAddCampaignModal(true)}
+                      className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 justify-center"
+                    >
+                      <Plus size={14} /> Planifier Campagne
+                    </button>
+                  )}
+                  {activeTab === 'evacuations' && (
+                    <button 
+                      onClick={() => setShowAddEvacuationModal(true)}
+                      className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 justify-center"
+                    >
+                      <Plus size={14} /> Enregistrer Évacuation
+                    </button>
+                  )}
+                  {activeTab === 'roster' && (
+                    <button 
+                      onClick={() => setShowAddRosterModal(true)}
+                      className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 justify-center"
+                    >
+                      <Plus size={14} /> Nouvelle Affectation
+                    </button>
+                  )}
+                  {activeTab === 'epidemiology' && (
+                    <button 
+                      onClick={() => setShowAddEpidemicModal(true)}
+                      className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 justify-center"
+                    >
+                      <Plus size={14} /> Déclarer Alerte
+                    </button>
+                  )}
+                </>
               ) : (
-                isGrantedExpertWrite ? (
-                  <button 
-                    onClick={() => setShowAddInventoryModal(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg active:scale-95 w-full sm:w-auto justify-center"
-                  >
-                    <Plus size={16} /> Ajouter une Référence
-                  </button>
-                ) : (
-                  <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl font-bold text-[10px] uppercase tracking-widest border border-slate-200/50">
-                    🔐 (Lecture Seule)
-                  </div>
-                )
+                <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl font-bold text-[10px] uppercase tracking-widest border border-slate-200/50 text-center">
+                  🔐 (Lecture Seule)
+                </div>
               )}
             </div>
           </div>
@@ -589,24 +856,6 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
           <div className="mt-8">
             {activeTab === 'records' ? (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {stats.map((stat, i) => (
-              <motion.div 
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm"
-              >
-                <div className={`w-12 h-12 ${stat.bg} ${stat.color} rounded-2xl flex items-center justify-center mb-4`}>
-                  <stat.icon size={24} />
-                </div>
-                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{stat.label}</p>
-                <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{stat.value}</p>
-              </motion.div>
-            ))}
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
@@ -881,195 +1130,556 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
         </>
       ) : (
         <>
-          {/* Pharmacy & Stocks Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-300">
-            <motion.div 
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm"
-            >
-              <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-2xl flex items-center justify-center mb-4">
-                <Box size={24} />
-              </div>
-              <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Références Médicales</p>
-              <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{inventoryItems.length}</p>
-            </motion.div>
+          {activeTab === 'inventory' && (
+            <>
+              {/* Pharmacy & Stocks Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-300">
+                <motion.div 
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm"
+                >
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-2xl flex items-center justify-center mb-4">
+                    <Box size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Références Médicales</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{inventoryItems.length}</p>
+                </motion.div>
 
-            <motion.div 
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm"
-            >
-              <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 text-red-650 rounded-2xl flex items-center justify-center mb-4">
-                <ShieldAlert size={24} />
-              </div>
-              <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Articles Stock Bas</p>
-              <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
-                {inventoryItems.filter(item => item.quantity <= item.minThreshold).length}
-              </p>
-            </motion.div>
+                <motion.div 
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm"
+                >
+                  <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 text-red-650 rounded-2xl flex items-center justify-center mb-4">
+                    <ShieldAlert size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Articles Stock Bas</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                    {inventoryItems.filter(item => item.quantity <= item.minThreshold).length}
+                  </p>
+                </motion.div>
 
-            <motion.div 
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="bg-slate-900 p-6 rounded-[2rem] text-white overflow-hidden relative shadow-2xl"
-            >
-              <div className="relative z-10">
-                <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center mb-4">
-                  <Activity size={24} />
-                </div>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Mouvements Enregistrés</p>
-                <p className="text-3xl font-black mt-1">{inventoryTransactions.length}</p>
+                <motion.div 
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="bg-slate-900 p-6 rounded-[2rem] text-white overflow-hidden relative shadow-2xl"
+                >
+                  <div className="relative z-10">
+                    <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center mb-4">
+                      <Activity size={24} />
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Mouvements Enregistrés</p>
+                    <p className="text-3xl font-black mt-1">{inventoryTransactions.length}</p>
+                  </div>
+                  <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
+                </motion.div>
               </div>
-              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
-            </motion.div>
-          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Stock List Panel */}
-            <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm p-8">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-50 dark:border-slate-800">
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Pharmacie & Consommables</h3>
-                  <div className="relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Filtrer le stock..." 
-                      value={inventorySearchTerm}
-                      onChange={(e) => setInventorySearchTerm(e.target.value)}
-                      className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl text-[10px] font-bold uppercase transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Stock List Panel */}
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm p-8">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-50 dark:border-slate-800">
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Pharmacie & Consommables</h3>
+                      <div className="relative">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input 
+                          type="text" 
+                          placeholder="Filtrer le stock..." 
+                          value={inventorySearchTerm}
+                          onChange={(e) => setInventorySearchTerm(e.target.value)}
+                          className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl text-[10px] font-bold uppercase transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/10">
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Article</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Catégorie</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Quantité</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Statut</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ajuster</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                          {inventoryItems
+                            .filter(item => (item.name || '').toLowerCase().includes((inventorySearchTerm || '').toLowerCase()) || (item.category || '').toLowerCase().includes((inventorySearchTerm || '').toLowerCase()))
+                            .map((item) => {
+                              const isLow = item.quantity <= item.minThreshold;
+                              const isOut = item.quantity === 0;
+                              return (
+                                <tr key={item.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                  <td className="px-6 py-5">
+                                    <p className="text-xs font-bold text-slate-900 dark:text-white uppercase">{item.name}</p>
+                                    <p className="text-[9px] text-slate-400 font-semibold font-mono uppercase">Mis à jour par {item.lastUpdatedBy}</p>
+                                  </td>
+                                  <td className="px-6 py-5">
+                                    <span className="text-[9px] font-black px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-md uppercase">
+                                      {item.category}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-5 text-right">
+                                    <span className={`text-xs font-mono font-black ${isLow ? 'text-red-500 font-bold' : 'text-slate-900 dark:text-white'}`}>
+                                      {item.quantity} {item.unit}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-5">
+                                    <div className="flex justify-center">
+                                      <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-tighter ${
+                                        isOut ? 'bg-red-500 text-white' : 
+                                        isLow ? 'bg-amber-100 text-amber-700' : 
+                                        'bg-emerald-100 text-emerald-700'
+                                      }`}>
+                                        {isOut ? 'Rupture' : isLow ? 'Stock Bas' : 'Optimal'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-5 text-right">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInventoryItem(item);
+                                        setStockMoveType('in');
+                                        setShowStockMoveModal(true);
+                                      }}
+                                      className="p-2 border border-slate-200 dark:border-slate-800 bg-slate-50 hover:bg-blue-600 dark:bg-slate-900 dark:hover:bg-blue-600 hover:text-white dark:text-white rounded-xl transition-all inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider"
+                                      title="Enregistrer une entrée/sortie"
+                                    >
+                                      <ArrowUpDown size={12} /> mvt
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                      {inventoryItems.length === 0 && (
+                        <div className="py-20 text-center text-slate-400 font-black text-[10px] uppercase tracking-widest">
+                          Aucune référence médicale répertoriée
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/10">
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Article</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Catégorie</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Quantité</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Statut</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ajuster</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                      {inventoryItems
-                        .filter(item => (item.name || '').toLowerCase().includes((inventorySearchTerm || '').toLowerCase()) || (item.category || '').toLowerCase().includes((inventorySearchTerm || '').toLowerCase()))
-                        .map((item) => {
-                          const isLow = item.quantity <= item.minThreshold;
-                          const isOut = item.quantity === 0;
-                          return (
-                            <tr key={item.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-6 py-5">
-                                <p className="text-xs font-bold text-slate-900 dark:text-white uppercase">{item.name}</p>
-                                <p className="text-[9px] text-slate-400 font-semibold font-mono uppercase">Mis à jour par {item.lastUpdatedBy}</p>
-                              </td>
-                              <td className="px-6 py-5">
-                                <span className="text-[9px] font-black px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-md uppercase">
-                                  {item.category}
-                                </span>
-                              </td>
-                              <td className="px-6 py-5 text-right">
-                                <span className={`text-xs font-mono font-black ${isLow ? 'text-red-500 font-bold' : 'text-slate-900 dark:text-white'}`}>
-                                  {item.quantity} {item.unit}
-                                </span>
-                              </td>
-                              <td className="px-6 py-5">
-                                <div className="flex justify-center">
-                                  <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-tighter ${
-                                    isOut ? 'bg-red-500 text-white' : 
-                                    isLow ? 'bg-amber-100 text-amber-700' : 
-                                    'bg-emerald-100 text-emerald-700'
-                                  }`}>
-                                    {isOut ? 'Rupture' : isLow ? 'Stock Bas' : 'Optimal'}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-5 text-right">
-                                <button
-                                  onClick={() => {
-                                    setSelectedInventoryItem(item);
-                                    setStockMoveType('in');
-                                    setShowStockMoveModal(true);
-                                  }}
-                                  className="p-2 border border-slate-200 dark:border-slate-800 bg-slate-50 hover:bg-blue-600 dark:bg-slate-900 dark:hover:bg-blue-600 hover:text-white dark:text-white rounded-xl transition-all inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider"
-                                  title="Enregistrer une entrée/sortie"
-                                >
-                                  <ArrowUpDown size={12} /> mvt
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                  {inventoryItems.length === 0 && (
-                    <div className="py-20 text-center text-slate-400 font-black text-[10px] uppercase tracking-widest">
-                      Aucune référence médicale répertoriée
+                {/* Health Movements and Alerts Sidebar */}
+                <div className="space-y-6">
+                  {/* Critical stock alerts widget */}
+                  <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6 flex items-center justify-between">
+                      Alertes de Stock Bas <ShieldAlert size={16} className="text-red-500" />
+                    </h3>
+                    <div className="space-y-4">
+                      {inventoryItems.filter(item => item.quantity <= item.minThreshold).length === 0 ? (
+                        <p className="text-[10px] text-slate-400 font-medium text-center py-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl text-emerald-700">Tous les stocks sont optimaux.</p>
+                      ) : (
+                        inventoryItems
+                          .filter(item => item.quantity <= item.minThreshold)
+                          .map(item => (
+                            <div key={item.id} className="p-4 bg-red-50 dark:bg-red-500/10 rounded-2xl border border-red-100 dark:border-red-500/20">
+                              <p className="text-xs font-black text-red-950 dark:text-red-300 uppercase leading-tight line-clamp-1">{item.name}</p>
+                              <p className="text-[10px] font-mono font-bold text-red-700/60 dark:text-red-400/60 uppercase mt-1">
+                                Seuil: {item.minThreshold} {item.unit} | Actuel: {item.quantity}
+                              </p>
+                            </div>
+                          ))
+                      )}
                     </div>
-                  )}
+                  </div>
+
+                  {/* Dynamic fluxes tracking log */}
+                  <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6 flex items-center justify-between">
+                      Flux Pharmacie <History size={16} />
+                    </h3>
+                    <div className="max-h-80 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+                      {inventoryTransactions.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 font-medium text-center py-4">Aucun flux récent.</p>
+                      ) : (
+                        inventoryTransactions.map(t => (
+                          <div key={t.id} className="flex gap-3 items-start border-b border-slate-100 dark:border-slate-800/40 pb-3 last:border-0 last:pb-0 font-sans">
+                            <div className={`w-1.5 h-10 rounded-full shrink-0 ${t.type === 'in' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white line-clamp-1">{t.itemName}</p>
+                                <span className={`text-[10px] font-mono font-black ${t.type === 'in' ? 'text-emerald-500' : 'text-blue-500'}`}>
+                                  {t.type === 'in' ? '+' : '-'}{t.quantity}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 italic">"{t.description}"</p>
+                              <p className="text-[8px] text-slate-400 font-medium uppercase font-mono mt-0.5">Par {t.userName} | {new Date(t.createdAt).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
+          )}
 
-            {/* Health Movements and Alerts Sidebar */}
-            <div className="space-y-6">
-              {/* Critical stock alerts widget */}
-              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6 flex items-center justify-between">
-                  Alertes de Stock Bas <ShieldAlert size={16} className="text-red-500" />
-                </h3>
-                <div className="space-y-4">
-                  {inventoryItems.filter(item => item.quantity <= item.minThreshold).length === 0 ? (
-                    <p className="text-[10px] text-slate-400 font-medium text-center py-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl text-emerald-700">Tous les stocks sont optimaux.</p>
-                  ) : (
-                    inventoryItems
-                      .filter(item => item.quantity <= item.minThreshold)
-                      .map(item => (
-                        <div key={item.id} className="p-4 bg-red-50 dark:bg-red-500/10 rounded-2xl border border-red-100 dark:border-red-500/20">
-                          <p className="text-xs font-black text-red-950 dark:text-red-300 uppercase leading-tight line-clamp-1">{item.name}</p>
-                          <p className="text-[10px] font-mono font-bold text-red-700/60 dark:text-red-400/60 uppercase mt-1">
-                            Seuil: {item.minThreshold} {item.unit} | Actuel: {item.quantity}
-                          </p>
-                        </div>
-                      ))
-                  )}
+          {activeTab === 'campaigns' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-2xl flex items-center justify-center mb-4">
+                    <Calendar size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Campagnes Planifiées</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                    {campaigns.filter(c => c.status === 'Planifié').length}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-2xl flex items-center justify-center mb-4">
+                    <ShieldCheck size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Campagnes En Cours</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                    {campaigns.filter(c => c.status === 'En cours').length}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 text-slate-600 rounded-2xl flex items-center justify-center mb-4">
+                    <History size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Total Campagnes</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{campaigns.length}</p>
                 </div>
               </div>
 
-              {/* Dynamic fluxes tracking log */}
               <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6 flex items-center justify-between">
-                  Flux Pharmacie <History size={16} />
-                </h3>
-                <div className="max-h-80 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
-                  {inventoryTransactions.length === 0 ? (
-                    <p className="text-[10px] text-slate-400 font-medium text-center py-4">Aucun flux récent.</p>
-                  ) : (
-                    inventoryTransactions.map(t => (
-                      <div key={t.id} className="flex gap-3 items-start border-b border-slate-100 dark:border-slate-800/40 pb-3 last:border-0 last:pb-0 font-sans">
-                        <div className={`w-1.5 h-10 rounded-full shrink-0 ${t.type === 'in' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white line-clamp-1">{t.itemName}</p>
-                            <span className={`text-[10px] font-mono font-black ${t.type === 'in' ? 'text-emerald-500' : 'text-blue-500'}`}>
-                              {t.type === 'in' ? '+' : '-'}{t.quantity}
+                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mb-6">Campagnes de Prévention & de Vaccination</h3>
+                {campaigns.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <Calendar size={48} className="mx-auto mb-4 text-slate-300" />
+                    <p className="font-bold text-sm">Aucune campagne enregistrée</p>
+                    <p className="text-xs mt-1 text-slate-400">Cliquez sur "Planifier Campagne" pour en ajouter une.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {campaigns.map((c) => (
+                      <div key={c.id} className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-100 dark:border-slate-800 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-start gap-2 mb-3">
+                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                              c.status === 'En cours' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' :
+                              c.status === 'Terminé' ? 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-400' :
+                              'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400'
+                            }`}>
+                              {c.status}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider font-bold">
+                              {c.type}
                             </span>
                           </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 italic">"{t.description}"</p>
-                          <p className="text-[8px] text-slate-400 font-medium uppercase font-mono mt-0.5">Par {t.userName} | {new Date(t.createdAt).toLocaleDateString()}</p>
+                          <h4 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight mb-2">{c.title}</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">{c.description}</p>
+                        </div>
+                        <div className="border-t border-slate-150 dark:border-slate-800/40 pt-4 mt-2 text-[10px] text-slate-500 font-medium font-sans space-y-1">
+                          <p className="flex items-center gap-1">👥 Public cible: <b className="text-slate-800 dark:text-slate-200">{c.targetAudience}</b></p>
+                          <p className="flex items-center gap-1">📅 Période: <b className="text-slate-800 dark:text-slate-200">Du {new Date(c.startDate).toLocaleDateString()} au {new Date(c.endDate).toLocaleDateString()}</b></p>
+                          <p className="text-[8px] font-mono text-slate-400 uppercase tracking-wider pt-1">Créé par: {c.createdBy}</p>
                         </div>
                       </div>
-                    ))
-                  )}
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'evacuations' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 text-red-650 rounded-2xl flex items-center justify-center mb-4">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">En Cours de Transfert</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1 text-red-600">
+                    {evacuations.filter(e => e.status === 'En cours de transfert').length}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-2xl flex items-center justify-center mb-4">
+                    <Truck size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Arrivées / Sécurisées</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                    {evacuations.filter(e => e.status === 'Arrivé à destination').length}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 text-slate-600 rounded-2xl flex items-center justify-center mb-4">
+                    <History size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Total Évacuations</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">{evacuations.length}</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mb-6">Suivi des Évacuations Sanitaires & Urgences</h3>
+                {evacuations.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <Truck size={48} className="mx-auto mb-4 text-slate-300" />
+                    <p className="font-bold text-sm">Aucun transfert d'urgence en cours</p>
+                    <p className="text-xs mt-1 text-slate-400">Cliquez sur "Enregistrer Évacuation" pour lancer une procédure.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {evacuations.map((e) => (
+                      <div key={e.id} className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${
+                              e.status === 'Clos' ? 'bg-slate-200 text-slate-800 dark:bg-slate-800' :
+                              e.status === 'Arrivé à destination' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' :
+                              'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400'
+                            }`}>
+                              {e.status}
+                            </span>
+                            <span className="text-[9px] font-black uppercase text-red-650 bg-red-50 dark:bg-red-900/10 px-2 py-0.5 rounded">
+                              Gravité: {e.severity}
+                            </span>
+                          </div>
+                          <h4 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">{e.patientName}</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium font-sans">Motif : {e.reason}</p>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-slate-400 font-sans pt-2">
+                            <p>🏥 Vers: <b className="text-slate-700 dark:text-slate-300">{e.destinationHospital}</b></p>
+                            <p>🚑 Ambulance: <b className="text-slate-700 dark:text-slate-300">{e.ambulanceCode || 'Non spécifiée'}</b></p>
+                            <p>🕒 Déclencheur: <b className="text-slate-700 dark:text-slate-300">{e.reportedBy}</b></p>
+                            <p>📅 Date: <b className="text-slate-700 dark:text-slate-300">{new Date(e.createdAt).toLocaleString()}</b></p>
+                          </div>
+                        </div>
+                        
+                        {isGrantedExpertWrite && e.status === 'En cours de transfert' && (
+                          <div className="flex gap-2 self-start md:self-center">
+                            <button 
+                              onClick={() => handleUpdateEvacuationStatus(e.id, 'Arrivé à destination')}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+                            >
+                              Déclarer Arrivé
+                            </button>
+                            <button 
+                              onClick={() => handleUpdateEvacuationStatus(e.id, 'Clos')}
+                              className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-300 dark:hover:bg-slate-600 transition"
+                            >
+                              Clôturer
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'roster' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-2xl flex items-center justify-center mb-4">
+                    <Clock size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Actuellement en Garde</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                    {roster.filter(r => new Date(r.date).toDateString() === new Date().toDateString()).length}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-2xl flex items-center justify-center mb-4">
+                    <Users size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Total Praticiens Planifiés</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                    {Array.from(new Set(roster.map(r => r.staffName))).length}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-2xl flex items-center justify-center mb-4">
+                    <ShieldCheck size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Affectations Futures</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">
+                    {roster.filter(r => new Date(r.date).getTime() > Date.now()).length}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mb-6">Plannings de Garde des Praticiens</h3>
+                {roster.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <Clock size={48} className="mx-auto mb-4 text-slate-300" />
+                    <p className="font-bold text-sm">Aucune garde programmée</p>
+                    <p className="text-xs mt-1 text-slate-400">Cliquez sur "Nouvelle Affectation" pour planifier des quarts.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left font-sans text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                          <th className="pb-4">Praticien</th>
+                          <th className="pb-4">Rôle</th>
+                          <th className="pb-4">Date de service</th>
+                          <th className="pb-4">Quart de travail</th>
+                          <th className="pb-4">Planifié par</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                        {roster.map((r) => (
+                          <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors font-bold text-slate-800 dark:text-slate-200">
+                            <td className="py-4 text-slate-900 dark:text-white uppercase text-xs font-black">{r.staffName}</td>
+                            <td className="py-4">
+                              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[9px] uppercase tracking-wider text-slate-500 font-bold">
+                                {r.staffRole}
+                              </span>
+                            </td>
+                            <td className="py-4">{new Date(r.date).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</td>
+                            <td className="py-4">
+                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                r.shift === 'Garde de Nuit' ? 'bg-slate-950 text-indigo-400 border border-indigo-900/40' :
+                                r.shift === 'Astreinte' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400' :
+                                'bg-sky-100 text-sky-800 dark:bg-sky-950/40 dark:text-sky-400'
+                              }`}>
+                                {r.shift}
+                              </span>
+                            </td>
+                            <td className="py-4 text-slate-400 text-[10px] font-mono">{r.createdBy}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'epidemiology' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-red-50 dark:bg-red-950/10 p-6 rounded-[2rem] border border-red-100 dark:border-red-900/30">
+                  <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 text-red-650 rounded-2xl flex items-center justify-center mb-4">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-red-800 dark:text-red-400 uppercase tracking-widest">Alertes Actives</p>
+                  <p className="text-3xl font-black text-red-900 dark:text-white mt-1">
+                    {epidemicAlerts.filter(a => a.alertActive).length}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-2xl flex items-center justify-center mb-4">
+                    <Activity size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Taux Paludisme (Fréq.)</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">14.2%</p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-pink-50 dark:bg-pink-900/20 text-pink-600 rounded-2xl flex items-center justify-center mb-4">
+                    <Heart size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Vaccinations Planifiées</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1">87.5%</p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-2xl flex items-center justify-center mb-4">
+                    <ShieldCheck size={24} />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Seuils Alerte Épidémie</p>
+                  <p className="text-3xl font-black text-slate-900 dark:text-white mt-1 text-emerald-600">Normaux</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mb-6">Alertes Sanitaires Épidémiologiques Actives</h3>
+                    {epidemicAlerts.length === 0 ? (
+                      <div className="text-center py-12 text-slate-400">
+                        <AlertTriangle size={48} className="mx-auto mb-4 text-slate-300" />
+                        <p className="font-bold text-sm">Aucune alerte sanitaire en cours</p>
+                        <p className="text-xs mt-1 text-slate-400">Toutes les données de diagnostic clinique de la localité sont conformes.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {epidemicAlerts.map((a) => (
+                          <div key={a.id} className={`p-6 rounded-3xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                            a.alertActive 
+                              ? 'bg-red-50/50 dark:bg-red-950/10 border-red-100 dark:border-red-900/20' 
+                              : 'bg-slate-50 dark:bg-slate-800/20 border-slate-100 dark:border-slate-800'
+                          }`}>
+                            <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${
+                                  a.alertActive ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                }`}>
+                                  {a.alertActive ? 'Active' : 'Résolue / Dormante'}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400 font-bold uppercase">Niveau : {a.severityLevel}</span>
+                              </div>
+                              <h4 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">Signalement : {a.disease}</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Cas Suspectés : <b>{a.suspectedCases}</b></p>
+                              {a.actionsTaken && <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 italic font-sans">Mesures : "{a.actionsTaken}"</p>}
+                              <p className="text-[8px] font-mono text-slate-400 uppercase tracking-wider mt-3">Déclaré par {a.declaredBy} | {new Date(a.createdAt).toLocaleDateString()}</p>
+                            </div>
+
+                            {isGrantedExpertWrite && a.alertActive && (
+                              <button
+                                onClick={() => handleToggleEpidemicAlert(a.id, false)}
+                                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-300 dark:hover:bg-slate-700 transition"
+                              >
+                                Déclarer Résolue
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                    <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight mb-6">Indicateurs Cliniques Clés</h3>
+                    <div className="space-y-4 text-xs font-bold text-slate-700 dark:text-slate-300 font-sans">
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100/50 dark:border-slate-800">
+                        <p className="text-slate-400 text-[9px] uppercase tracking-wider font-mono">Infections Respiratoires Aiguës (IRA)</p>
+                        <div className="flex justify-between items-baseline mt-1">
+                          <span className="text-lg font-black text-slate-900 dark:text-white">4.1%</span>
+                          <span className="text-[10px] text-emerald-500 font-bold">▼ -1.2%</span>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100/50 dark:border-slate-800">
+                        <p className="text-slate-400 text-[9px] uppercase tracking-wider font-mono">Gastro-entérites suspicion épidémie</p>
+                        <div className="flex justify-between items-baseline mt-1">
+                          <span className="text-lg font-black text-slate-900 dark:text-white">2.3%</span>
+                          <span className="text-[10px] text-slate-400">Stable</span>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100/50 dark:border-slate-800">
+                        <p className="text-slate-400 text-[9px] uppercase tracking-wider font-mono">Taux couverture vaccination</p>
+                        <div className="flex justify-between items-baseline mt-1">
+                          <span className="text-lg font-black text-slate-900 dark:text-white">92.4%</span>
+                          <span className="text-[10px] text-emerald-500 font-bold">▲ +0.8%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </>
       )}
           </div>
@@ -1370,6 +1980,375 @@ export default function HealthView({ activeSpace = 'USER' }: { activeSpace?: 'US
                   }`}
                 >
                   Valider
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 3. Add Campaign Modal */}
+      {showAddCampaignModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowAddCampaignModal(false)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 relative z-10 shadow-2xl"
+          >
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-6">Planifier une Campagne</h2>
+            
+            <form onSubmit={handleAddCampaign} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Titre de la campagne</label>
+                <input 
+                  type="text"
+                  required
+                  placeholder="Ex: Campagne Paludisme Zéro ou Vaccination Rougeole"
+                  value={newCampaign.title}
+                  onChange={(e) => setNewCampaign({...newCampaign, title: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Type de campagne</label>
+                  <select 
+                    value={newCampaign.type}
+                    onChange={(e) => setNewCampaign({...newCampaign, type: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  >
+                    <option value="Vaccination">Vaccination</option>
+                    <option value="Sensibilisation">Sensibilisation</option>
+                    <option value="Distribution">Distribution</option>
+                    <option value="Dépistage">Dépistage</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Public Cible</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Ex: Enfants 0-5 ans, Femmes enceintes"
+                    value={newCampaign.targetAudience}
+                    onChange={(e) => setNewCampaign({...newCampaign, targetAudience: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Date de début</label>
+                  <input 
+                    type="date"
+                    required
+                    value={newCampaign.startDate}
+                    onChange={(e) => setNewCampaign({...newCampaign, startDate: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Date de fin</label>
+                  <input 
+                    type="date"
+                    required
+                    value={newCampaign.endDate}
+                    onChange={(e) => setNewCampaign({...newCampaign, endDate: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Description / Actions menées</label>
+                <textarea 
+                  required
+                  rows={2}
+                  placeholder="Objectif de la campagne, vaccins distribués, lieu de rassemblement..."
+                  value={newCampaign.description}
+                  onChange={(e) => setNewCampaign({...newCampaign, description: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowAddCampaignModal(false)}
+                  className="flex-1 px-6 py-4 border border-slate-150 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 px-6 py-4 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
+                >
+                  Ajouter
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 4. Add Evacuation Modal */}
+      {showAddEvacuationModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowAddEvacuationModal(false)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 relative z-10 shadow-2xl"
+          >
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-6">Nouvelle Évacuation</h2>
+            
+            <form onSubmit={handleAddEvacuation} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du patient</label>
+                <input 
+                  type="text"
+                  required
+                  placeholder="Ex: Jean Dupont"
+                  value={newEvacuation.patientName}
+                  onChange={(e) => setNewEvacuation({...newEvacuation, patientName: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hôpital de destination</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Ex: CHU Central, Hôpital Militaire"
+                    value={newEvacuation.destinationHospital}
+                    onChange={(e) => setNewEvacuation({...newEvacuation, destinationHospital: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Code Ambulance</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Ex: AMB-03"
+                    value={newEvacuation.ambulanceCode}
+                    onChange={(e) => setNewEvacuation({...newEvacuation, ambulanceCode: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Niveau de Gravité</label>
+                <select 
+                  value={newEvacuation.severity}
+                  onChange={(e) => setNewEvacuation({...newEvacuation, severity: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                >
+                  <option value="Haute d'urgence">Haute d'urgence (Absolue)</option>
+                  <option value="Modérée">Modérée (Relative)</option>
+                  <option value="Basse / Suivi">Basse / Transfert standard</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Raison du transfert / Diagnostic d'urgence</label>
+                <textarea 
+                  required
+                  rows={2}
+                  placeholder="Détails du traumatisme, défaillance organique, etc."
+                  value={newEvacuation.reason}
+                  onChange={(e) => setNewEvacuation({...newEvacuation, reason: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowAddEvacuationModal(false)}
+                  className="flex-1 px-6 py-4 border border-slate-150 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 px-6 py-4 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
+                >
+                  Ajouter
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 5. Add Roster Modal */}
+      {showAddRosterModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowAddRosterModal(false)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 relative z-10 shadow-2xl"
+          >
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-6">Affecter un Praticien</h2>
+            
+            <form onSubmit={handleAddRoster} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du praticien</label>
+                <input 
+                  type="text"
+                  required
+                  placeholder="Ex: Dr. Michel Sassi"
+                  value={newRosterItem.staffName}
+                  onChange={(e) => setNewRosterItem({...newRosterItem, staffName: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Rôle</label>
+                  <select 
+                    value={newRosterItem.staffRole}
+                    onChange={(e) => setNewRosterItem({...newRosterItem, staffRole: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  >
+                    <option value="Médecin">Médecin</option>
+                    <option value="Infirmier">Infirmier</option>
+                    <option value="Sage-femme">Sage-femme</option>
+                    <option value="Aide-Soignant">Aide-Soignant</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Type de quart</label>
+                  <select 
+                    value={newRosterItem.shift}
+                    onChange={(e) => setNewRosterItem({...newRosterItem, shift: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  >
+                    <option value="Garde de Jour">Garde de Jour (08:00 - 20:00)</option>
+                    <option value="Garde de Nuit">Garde de Nuit (20:00 - 08:00)</option>
+                    <option value="Astreinte">Astreinte 24h</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Date de service</label>
+                <input 
+                  type="date"
+                  required
+                  value={newRosterItem.date}
+                  onChange={(e) => setNewRosterItem({...newRosterItem, date: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowAddRosterModal(false)}
+                  className="flex-1 px-6 py-4 border border-slate-150 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 px-6 py-4 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
+                >
+                  Ajouter
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 6. Add Epidemic Alert Modal */}
+      {showAddEpidemicModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowAddEpidemicModal(false)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 relative z-10 shadow-2xl"
+          >
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-6">Déclarer un Signalement Épidémique</h2>
+            
+            <form onSubmit={handleAddEpidemicAlert} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pathologie suspectée</label>
+                  <select 
+                    value={newEpidemicAlert.disease}
+                    onChange={(e) => setNewEpidemicAlert({...newEpidemicAlert, disease: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  >
+                    <option value="Paludisme">Paludisme (Accès Grave)</option>
+                    <option value="Gastro-entérite">Gastro-entérite suspecte</option>
+                    <option value="Rougeole">Rougeole</option>
+                    <option value="Infection Respiratoire">Infection Respiratoire Aiguë</option>
+                    <option value="Dengue / Arbovirose">Dengue / Arbovirose</option>
+                    <option value="Autre Pathologie">Autre Pathologie d'importance</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cas identifiés</label>
+                  <input 
+                    type="number"
+                    required
+                    min="1"
+                    value={newEpidemicAlert.suspectedCases}
+                    onChange={(e) => setNewEpidemicAlert({...newEpidemicAlert, suspectedCases: parseInt(e.target.value) || 1})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Niveau d'Alerte Sanitaire</label>
+                <select 
+                  value={newEpidemicAlert.severityLevel}
+                  onChange={(e) => setNewEpidemicAlert({...newEpidemicAlert, severityLevel: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none"
+                >
+                  <option value="Faible">Faible (Vigilance)</option>
+                  <option value="Modéré">Modéré (Attention)</option>
+                  <option value="Critique">Critique (Seuil Épidémique franchi)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mesures et actions immédiates requises</label>
+                <textarea 
+                  required
+                  rows={3}
+                  placeholder="Ex: Confinement des cas, isolement, prophylaxie, distribution de moustiquaires, rapport à l'OMS..."
+                  value={newEpidemicAlert.actionsTaken}
+                  onChange={(e) => setNewEpidemicAlert({...newEpidemicAlert, actionsTaken: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-750 rounded-2xl text-sm font-bold focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowAddEpidemicModal(false)}
+                  className="flex-1 px-6 py-4 border border-slate-150 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 px-6 py-4 bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
+                >
+                  Déclarer
                 </button>
               </div>
             </form>

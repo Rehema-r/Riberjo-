@@ -28,6 +28,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           if (data.primaryColor) {
             document.documentElement.style.setProperty('--primary-brand', data.primaryColor);
           }
+
+          // Update Favicon to match the platform logo
+          if (data.logoUrl) {
+            const faviconElement = document.getElementById('favicon') as HTMLLinkElement | null;
+            if (faviconElement) {
+              faviconElement.href = data.logoUrl;
+            }
+          }
         }
         setLoading(false);
       },
