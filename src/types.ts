@@ -88,6 +88,12 @@ export interface UserProfile {
   serviceCardUrl?: string;
   qrCode?: string;
   baseSalary?: number;
+  housingAllowance?: number;
+  transportAllowance?: number;
+  cnssNumber?: string;
+  contractType?: 'CDI' | 'CDD' | 'Stage' | 'Apprentissage';
+  inppCategory?: 'Cadre' | 'Maîtrise' | 'Exécution';
+  dependentsCount?: number;
   avatarUrl?: string;
   cardPhotoUrl?: string;
   password?: string;
@@ -122,12 +128,23 @@ export interface Payroll {
   id: string;
   userId: string;
   userName: string;
+  cnssNumber?: string;
+  contractType?: string;
   month: number;
   year: number;
   period?: string; // Added to match component
   baseSalary: number;
+  housingAllowance?: number;
+  transportAllowance?: number;
+  familyAllowances?: number;
+  grossSalary?: number;
   primes: number;
   bonuses?: number; // Added to match component
+  cnssWorkerDeduction?: number; // 5% CNSS Travailleur
+  iprDeduction?: number; // IPR (Impôt sur le Revenu Professionnel - DGI)
+  cnssEmployerContribution?: number; // 13% CNSS Employeur
+  inppContribution?: number; // 1% - 3% INPP
+  onemContribution?: number; // 0.2% ONEM
   deductions: number;
   netSalary: number;
   status: 'pending' | 'paid';
@@ -179,6 +196,7 @@ export interface AppSettings {
   companyName: string;
   primaryColor: string;
   logoUrl?: string;
+  domainName?: string;
   defaultRegistrationRole: UserRole;
   allowSelfRegistration: boolean;
   dgSignatureUrl?: string;

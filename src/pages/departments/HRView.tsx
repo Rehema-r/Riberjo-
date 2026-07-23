@@ -47,13 +47,20 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
     gender: 'M' as 'M' | 'F',
     function: '',
     birthDate: '',
-    civilStatus: 'Célibataire'
+    civilStatus: 'Célibataire',
+    cnssNumber: '',
+    contractType: 'CDI' as 'CDI' | 'CDD' | 'Stage' | 'Apprentissage',
+    inppCategory: 'Maîtrise' as 'Cadre' | 'Maîtrise' | 'Exécution',
+    dependentsCount: 0,
+    baseSalary: 250,
+    housingAllowance: 75,
+    transportAllowance: 44
   });
 
   const [isCreating, setIsCreating] = useState(false);
 
-  // Tabs: 'registry' for Employee registry, 'forecast' for planning simulation
-  const [activeTab, setActiveTab] = useState<'registry' | 'forecast'>('registry');
+  // Tabs: 'registry' for Employee registry, 'forecast' for planning simulation, 'compliance' for RDC law & CNSS
+  const [activeTab, setActiveTab] = useState<'registry' | 'forecast' | 'compliance'>('registry');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Forecast states
@@ -196,7 +203,9 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
       setNewEmployee({ 
         fullName: '', email: '', role: 'USER', departmentId: '03', 
         serviceId: '01', gender: 'M', function: '', birthDate: '', 
-        civilStatus: 'Célibataire' 
+        civilStatus: 'Célibataire', cnssNumber: '', contractType: 'CDI',
+        inppCategory: 'Maîtrise', dependentsCount: 0, baseSalary: 250,
+        housingAllowance: 75, transportAllowance: 44
       });
       alert(`Employé créé avec succès!\nMatricule: ${matricule}\nMot de passe par défaut: ChangeMe123!`);
     } catch (err) {
@@ -439,7 +448,7 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
               <div className="bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl flex gap-1 w-full sm:w-auto justify-center shadow-inner">
                 <button
                   onClick={() => setActiveTab('registry')}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all w-1/2 sm:w-auto justify-center ${
+                  className={`flex items-center gap-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all w-1/3 sm:w-auto justify-center ${
                     activeTab === 'registry'
                       ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
                       : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 font-bold'
@@ -449,13 +458,23 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
                 </button>
                 <button
                   onClick={() => setActiveTab('forecast')}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all w-1/2 sm:w-auto justify-center ${
+                  className={`flex items-center gap-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all w-1/3 sm:w-auto justify-center ${
                     activeTab === 'forecast'
                       ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
-                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 font-bold'
                   }`}
                 >
-                  <TrendingUp size={14} /> Prévision de Personnel
+                  <TrendingUp size={14} /> Prévision FTE
+                </button>
+                <button
+                  onClick={() => setActiveTab('compliance')}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all w-1/3 sm:w-auto justify-center ${
+                    activeTab === 'compliance'
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 font-bold'
+                  }`}
+                >
+                  <ShieldAlert size={14} /> Administration & CNSS RDC
                 </button>
               </div>
 
@@ -594,6 +613,110 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
             </div>
           </div>
         </>
+      ) : activeTab === 'compliance' ? (
+        /* DRC Compliance View (Administration, Code du Travail, CNSS & Inspection) */
+        <div className="space-y-8 animate-in fade-in duration-300">
+          <div className="bg-slate-900 dark:bg-slate-950 p-8 rounded-[2.5rem] text-white relative overflow-hidden shadow-2xl">
+            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 max-w-2xl space-y-3">
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-400 uppercase tracking-widest">
+                <ShieldAlert size={12} /> Référentiel Légal - République Démocratique du Congo
+              </span>
+              <h2 className="text-2xl font-black uppercase tracking-tight">Conformité Administrative & Code du Travail (Loi n° 015/2002)</h2>
+              <p className="text-xs text-slate-400 font-medium leading-relaxed">
+                Tableau de suivi des obligations légales d'entreprise auprès de l'Inspection du Travail, de la CNSS, de l'INPP, de l'ONEM et de la DGI (Impôt IPR).
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">CNSS (Sécurité Sociale)</p>
+              <h3 className="text-xl font-black text-emerald-600">5% Salarial / 13% Patronal</h3>
+              <p className="text-[10px] text-slate-400 font-medium mt-1">Pension, Risques pro., Allocations fam.</p>
+            </div>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">IPR (Impôt DGI)</p>
+              <h3 className="text-xl font-black text-blue-600">0% à 30% Progressif</h3>
+              <p className="text-[10px] text-slate-400 font-medium mt-1">Abattement 2% par personne à charge</p>
+            </div>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">INPP (Formation Pro)</p>
+              <h3 className="text-xl font-black text-amber-600">1% à 3% Patronal</h3>
+              <p className="text-[10px] text-slate-400 font-medium mt-1">Déclaration mensuelle obligatoire</p>
+            </div>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ONEM (Emploi)</p>
+              <h3 className="text-xl font-black text-purple-600">0,2% Patronal</h3>
+              <p className="text-[10px] text-slate-400 font-medium mt-1">Déclaration d'engagement sous 15j</p>
+            </div>
+          </div>
+
+          {/* Legal Framework Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                <FileText className="text-emerald-600" size={20} /> Obligations Légales RDC Obligatoires
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <p className="text-xs font-black text-slate-900 dark:text-white uppercase">1. Indemnité de Logement (Art. 138 Code du Travail)</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">L'employeur doit fournir un logement décent ou payer une indemnité égale au moins à 30% du salaire de base.</p>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <p className="text-xs font-black text-slate-900 dark:text-white uppercase">2. Transport des Travailleurs (Décret Exécutif)</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">Prise en charge obligatoire du transport domicile-travail (allocation forfaitaire ou titre de transport effectif).</p>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <p className="text-xs font-black text-slate-900 dark:text-white uppercase">3. Congés Payés & Circonstance (Art. 140-146)</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">1 jour ouvrable/mois de service + 1 jour par tranche de 5 ans d'ancienneté. Mariage (2j), Naissance (2j), Maternité (14 semaines).</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                <Users className="text-emerald-600" size={20} /> Registre d'Employeur Officiel
+              </h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                Le Registre d'Employeur est coté et paraphé par l'Inspecteur du Travail du ressort. Vous pouvez exporter la synthèse officielle au format certifié.
+              </p>
+
+              <div className="p-6 bg-slate-950 rounded-2xl text-white space-y-4">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Total Travailleurs Immatriculés:</span>
+                  <span className="font-mono font-bold text-emerald-400">{employees.length} agents</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Affiliation CNSS Entreprise:</span>
+                  <span className="font-mono font-bold text-emerald-400">N° 100482910/RDC</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Inspection du Travail Ressort:</span>
+                  <span className="font-mono font-bold text-slate-200">Lubumbashi / Haut-Katanga</span>
+                </div>
+
+                <button 
+                  onClick={() => {
+                    const csvContent = "data:text/csv;charset=utf-8,Matricule,Nom,Email,Departement,Contrat,Numero_CNSS,Role,Statut\n"
+                      + employees.map(e => `${e.matricule},"${e.fullName}",${e.email},${e.departmentId},${e.contractType || 'CDI'},${e.cnssNumber || 'N/A'},${e.role},${e.status}`).join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `Registre_Employeur_RDC_${new Date().toISOString().split('T')[0]}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Download size={16} /> Exporter Registre d'Employeur (Inspection RDC)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : (
         /* Predictive Workforce Planning Module Tab */
         <div className="space-y-8">
@@ -1053,6 +1176,100 @@ export default function HRView({ activeSpace = 'USER' }: { activeSpace?: 'USER' 
                       <option value="Divorcé(e)">Divorcé(e)</option>
                       <option value="Veuf/Veuve">Veuf/Veuve</option>
                     </select>
+                </div>
+              </div>
+
+              {/* Congolese Administration Details (RDC) */}
+              <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-100 dark:border-slate-800 space-y-4">
+                <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Contrat & Immatriculation RDC (Code du Travail & CNSS)</p>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Type de Contrat</label>
+                    <select
+                      value={newEmployee.contractType}
+                      onChange={(e) => setNewEmployee({...newEmployee, contractType: e.target.value as any})}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl text-xs font-bold"
+                    >
+                      <option value="CDI">CDI (Indéterminé)</option>
+                      <option value="CDD">CDD (Déterminé)</option>
+                      <option value="Stage">Stage Pro</option>
+                      <option value="Apprentissage">Apprentissage</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">N° Immatriculation CNSS</label>
+                    <input 
+                      type="text"
+                      value={newEmployee.cnssNumber}
+                      onChange={(e) => setNewEmployee({...newEmployee, cnssNumber: e.target.value})}
+                      placeholder="Ex: 1003849102"
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl text-xs font-bold font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Catégorie INPP</label>
+                    <select
+                      value={newEmployee.inppCategory}
+                      onChange={(e) => setNewEmployee({...newEmployee, inppCategory: e.target.value as any})}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl text-xs font-bold"
+                    >
+                      <option value="Cadre">Cadre de Direction</option>
+                      <option value="Maîtrise">Agent de Maîtrise</option>
+                      <option value="Exécution">Agent d'Exécution</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-4 pt-2">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Personnes à Charge</label>
+                    <input 
+                      type="number" min="0" max="12"
+                      value={newEmployee.dependentsCount}
+                      onChange={(e) => setNewEmployee({...newEmployee, dependentsCount: parseInt(e.target.value) || 0})}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl text-xs font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Salaire de Base ($)</label>
+                    <input 
+                      type="number" min="0"
+                      value={newEmployee.baseSalary}
+                      onChange={(e) => {
+                        const base = parseFloat(e.target.value) || 0;
+                        setNewEmployee({
+                          ...newEmployee, 
+                          baseSalary: base,
+                          housingAllowance: Math.round(base * 0.30)
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl text-xs font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Logement (30% RDC) ($)</label>
+                    <input 
+                      type="number" min="0"
+                      value={newEmployee.housingAllowance}
+                      onChange={(e) => setNewEmployee({...newEmployee, housingAllowance: parseFloat(e.target.value) || 0})}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl text-xs font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Transport Obligatoire ($)</label>
+                    <input 
+                      type="number" min="0"
+                      value={newEmployee.transportAllowance}
+                      onChange={(e) => setNewEmployee({...newEmployee, transportAllowance: parseFloat(e.target.value) || 0})}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl text-xs font-bold"
+                    />
+                  </div>
                 </div>
               </div>
 

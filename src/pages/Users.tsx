@@ -2429,7 +2429,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                               
                               <div className="flex flex-col items-center gap-1.5">
                                 <div className="w-8 h-0.5 bg-emerald-500 rounded-full"></div>
-                                <span className="text-[6px] font-black text-slate-500 uppercase tracking-[0.3em] block">www.riberjo.com</span>
+                                <span className="text-[6px] font-black text-slate-500 uppercase tracking-[0.3em] block">www.{settings?.domainName || "riberjo.com"}</span>
                               </div>
                             </div>
                           </div>

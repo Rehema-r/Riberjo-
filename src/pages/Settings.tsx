@@ -83,6 +83,7 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
   const [settings, setSettings] = useState<AppSettings>({
     companyName: 'RIBERJO',
     logoUrl: 'https://ais-dev-lqe5yig5k3o26rrfztrtng-160473187408.europe-west2.run.app/favicon-riberjo.png',
+    domainName: 'riberjo.com',
     primaryColor: '#10B981',
     defaultRegistrationRole: 'USER',
     allowSelfRegistration: false,
@@ -1273,6 +1274,10 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                         <div>
                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Nom de l'entreprise</label>
                            <input type="text" value={settings.companyName} onChange={(e) => setSettings({...settings, companyName: e.target.value})} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white" />
+                        </div>
+                        <div>
+                           <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Domaine Officiel de la Plateforme</label>
+                           <input type="text" value={settings.domainName || 'riberjo.com'} onChange={(e) => setSettings({...settings, domainName: e.target.value})} placeholder="riberjo.com" className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white" />
                         </div>
                         <div>
                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Logo de l'entreprise</label>
