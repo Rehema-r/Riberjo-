@@ -4,7 +4,7 @@ import {
   ShoppingCart, Tag, CheckCircle2, Ban, Eye, Printer, 
   Check, X, Shield, Lock, FileText, AlertTriangle, 
   Trash2, RefreshCw, Mail, Phone, MapPin, Globe, CreditCard, 
-  ChevronDown, Award, PlusCircle, Key
+  ChevronDown, Award, PlusCircle, Key, Package
 } from 'lucide-react';
 import { 
   collection, query, orderBy, onSnapshot, limit, addDoc, doc, 
@@ -16,10 +16,23 @@ import { SaleRecord, ClientOrder, ClientProfile, ClientType, UserProfile } from 
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { jsPDF } from 'jspdf';
+import { notificationService } from '../../services/notificationService';
 
 export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 'USER' | 'SUPER_USER' | 'ADMIN' }) {
   const { profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'ventes' | 'commandes' | 'clients'>('ventes');
+  const [activeTab, setActiveTab] = useState<'ventes' | 'commandes' | 'clients' | 'propositions'>('ventes');
+
+  // Tab 4: Stock Proposals State
+  const [proposals, setProposals] = useState<any[]>([]);
+  const [selectedProposal, setSelectedProposal] = useState<any | null>(null);
+  const [showStudyModal, setShowStudyModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [studyForm, setStudyForm] = useState({
+    sellingPrice: 0,
+    commercialPitch: '',
+    targetAudience: 'Tous Publics / Agriculteurs'
+  });
+  const [rejectionReason, setRejectionReason] = useState('');
   
   // Tab 1: Direct Sales State
   const [sales, setSales] = useState<SaleRecord[]>([]);
@@ -96,20 +109,154 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
     return () => unsubscribe();
   }, []);
 
-  // Load Clients Real-time
+  // Load Stock Proposals Real-time
   useEffect(() => {
     const q = query(
-      collection(db, 'clients'),
-      orderBy('registrationDate', 'desc')
+      collection(db, 'assets'),
+      orderBy('lastRefill', 'desc')
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientProfile)));
+      setProposals(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => {
-      console.warn("MarketingView clients onSnapshot operates in local cache mode:", error.message);
-      handleFirestoreError(error, OperationType.LIST, 'clients');
+      console.warn("MarketingView proposals onSnapshot error:", error.message);
     });
     return () => unsubscribe();
   }, []);
+
+  // Workflow Handlers for Proposals
+  const handleCompleteMarketingStudy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProposal || !profile) return;
+
+    try {
+      await updateDoc(doc(db, 'assets', selectedProposal.id), {
+        sellingPrice: studyForm.sellingPrice,
+        commercialPitch: studyForm.commercialPitch,
+        targetAudience: studyForm.targetAudience,
+        workflowStatus: 'proposal_pending_approval',
+        marketingStudiedBy: profile.fullName,
+        marketingStudiedAt: Date.now()
+      });
+
+      // Also update inventory if present
+      try {
+        const invQ = query(collection(db, 'inventory'), where('name', '==', selectedProposal.name));
+        const invSnap = await getDocs(invQ);
+        for (const d of invSnap.docs) {
+          await updateDoc(doc(db, 'inventory', d.id), {
+            sellingPrice: studyForm.sellingPrice,
+            workflowStatus: 'proposal_pending_approval'
+          });
+        }
+      } catch (e) {}
+
+      // Notify DG, Admins & Logistics
+      await notificationService.notifyMarketingStudy(
+        selectedProposal.name,
+        studyForm.sellingPrice,
+        profile.fullName
+      );
+
+      alert(`Étude Marketing pour "${selectedProposal.name}" enregistrée avec succès !\n\nUne notification automatique a été transmise au Directeur Général (DG) et au Chef de Service pour la décision finale.`);
+
+      setShowStudyModal(false);
+      setSelectedProposal(null);
+    } catch (err) {
+      console.error("Error submitting marketing study:", err);
+      alert("Erreur lors de la soumission de l'étude marketing.");
+    }
+  };
+
+  const handleApproveProposal = async (item: any) => {
+    if (!profile) return;
+    const isAuthorized = profile.role === 'SUPER_ADMIN' || profile.role === 'BOARD_MEMBER' || profile.role === 'ADMIN' || profile.departmentId === '04';
+
+    if (!isAuthorized) {
+      alert("Accès réservé au Chef de Service, Admins et au Directeur Général (DG).");
+      return;
+    }
+
+    if (!window.confirm(`Confirmez-vous la publication officielle de "${item.name}" en Boutique au prix de $${item.sellingPrice || item.price || 0} ?`)) {
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'assets', item.id), {
+        status: 'in_stock',
+        workflowStatus: 'published',
+        validatedBy: profile.fullName,
+        validatedAt: Date.now()
+      });
+
+      // Also update inventory status
+      try {
+        const invQ = query(collection(db, 'inventory'), where('name', '==', item.name));
+        const invSnap = await getDocs(invQ);
+        for (const d of invSnap.docs) {
+          await updateDoc(doc(db, 'inventory', d.id), {
+            workflowStatus: 'published'
+          });
+        }
+      } catch (e) {}
+
+      // Notify ALL stakeholders including DG
+      await notificationService.notifyStockApproval(
+        item.name,
+        true,
+        profile.fullName,
+        item.sellingPrice || item.price || 0
+      );
+
+      alert(`Article "${item.name}" VALIDÉ ET PUBLIÉ EN BOUTIQUE !\n\nNotifications automatiques envoyées à la Logistique, au Marketing, au DG et aux Chefs de Service.`);
+    } catch (err) {
+      console.error("Error approving proposal:", err);
+      alert("Erreur lors de la validation de l'article.");
+    }
+  };
+
+  const handleRejectProposal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProposal || !profile) return;
+
+    try {
+      await updateDoc(doc(db, 'assets', selectedProposal.id), {
+        status: 'retired',
+        workflowStatus: 'rejected',
+        rejectionReason: rejectionReason || 'Non conforme aux critères commerciaux',
+        validatedBy: profile.fullName,
+        validatedAt: Date.now()
+      });
+
+      // Also update inventory status
+      try {
+        const invQ = query(collection(db, 'inventory'), where('name', '==', selectedProposal.name));
+        const invSnap = await getDocs(invQ);
+        for (const d of invSnap.docs) {
+          await updateDoc(doc(db, 'inventory', d.id), {
+            workflowStatus: 'rejected'
+          });
+        }
+      } catch (e) {}
+
+      // Notify ALL stakeholders including DG
+      await notificationService.notifyStockApproval(
+        selectedProposal.name,
+        false,
+        profile.fullName,
+        undefined,
+        rejectionReason
+      );
+
+      alert(`Proposition "${selectedProposal.name}" REJETÉE.\n\nNotifications transmises à la Logistique, au Marketing et au DG.`);
+
+      setShowRejectModal(false);
+      setSelectedProposal(null);
+      setRejectionReason('');
+    } catch (err) {
+      console.error("Error rejecting proposal:", err);
+      alert("Erreur lors du rejet de la proposition.");
+    }
+  };
 
   // Sync Unit price on Manual Order Selection
   useEffect(() => {
@@ -792,6 +939,7 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
   const totalSalesVolume = sales.reduce((acc, sale) => acc + sale.total, 0);
   const pendingOrdersCount = orders.filter(o => o.status === 'pending').length;
   const activeClientsCount = clients.filter(c => c.status === 'active').length;
+  const pendingProposalsCount = proposals.filter(p => p.workflowStatus === 'proposal_pending_marketing' || p.workflowStatus === 'proposal_pending_approval').length;
 
   const stats = [
     { label: 'Volume Ventes Directes', value: `$${totalSalesVolume.toLocaleString()}`, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
@@ -891,6 +1039,21 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
           }`}
         >
           👥 Gestion de Clients ({clients.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('propositions')}
+          className={`px-6 py-4 border-b-2 text-xs font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-2 ${
+            activeTab === 'propositions'
+              ? 'border-purple-600 text-purple-600 font-black'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800'
+          }`}
+        >
+          🏷️ Validation Stock & Boutique ({proposals.length})
+          {pendingProposalsCount > 0 && (
+            <span className="bg-purple-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse">
+              {pendingProposalsCount} à traiter
+            </span>
+          )}
         </button>
       </div>
 
@@ -1553,6 +1716,154 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
             </div>
           </div>
         )}
+
+        {/* Tab 4: Proposals & Store Catalogue Validation Workflow */}
+        {activeTab === 'propositions' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Header info banner */}
+            <div className="p-6 bg-gradient-to-r from-purple-900 to-indigo-950 text-white rounded-[2.5rem] shadow-xl border border-purple-500/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-widest bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full border border-purple-500/30">
+                  Workflow d'Approbation d'Articles
+                </span>
+                <h2 className="text-2xl font-black uppercase tracking-tight mt-2">Circulation & Validation des Articles de Stock</h2>
+                <p className="text-xs text-purple-200 mt-1 max-w-2xl font-medium">
+                  <strong>1. Logistique</strong> : Propose l'article. &bull; <strong>2. Marketing</strong> : Fixe le prix de vente & le pitch commercial. &bull; <strong>3. Chef de Service / DG</strong> : Valide la publication en Boutique ou Rejeter. Notifications automatiques à chaque étape.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <span className="bg-purple-600/30 text-purple-200 px-4 py-2 rounded-2xl text-xs font-black uppercase border border-purple-400/30">
+                  {proposals.length} Article(s) répertorié(s)
+                </span>
+              </div>
+            </div>
+
+            {/* List of items & proposals */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {proposals.map((item) => {
+                const wfStatus = item.workflowStatus || (item.status === 'in_stock' ? 'published' : 'proposal_pending_marketing');
+                const isPendingMarketing = wfStatus === 'proposal_pending_marketing';
+                const isPendingApproval = wfStatus === 'proposal_pending_approval';
+                const isPublished = wfStatus === 'published' || item.status === 'in_stock';
+                const isRejected = wfStatus === 'rejected' || item.status === 'retired';
+
+                return (
+                  <div key={item.id} className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative overflow-hidden">
+                    {/* Status Badge */}
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-3 py-1 rounded-full ${
+                          isPendingMarketing ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' :
+                          isPendingApproval ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300' :
+                          isPublished ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                          'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                        }`}>
+                          {isPendingMarketing && "🟡 1. Attente Étude Marketing"}
+                          {isPendingApproval && "🔵 2. Attente Validation DG"}
+                          {isPublished && "🟢 3. Validé & Publié en Boutique"}
+                          {isRejected && "🔴 Rejeté"}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 font-bold">{item.unit || 'Unité'}</span>
+                    </div>
+
+                    {/* Item Details */}
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">{item.name}</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 font-medium">{item.description || 'Aucune description fournie.'}</p>
+                    </div>
+
+                    {/* Meta information */}
+                    <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold">Stock Logistique :</span>
+                        <span className="font-black text-slate-900 dark:text-white">{item.quantity} {item.unit || 'unités'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold">Proposé par :</span>
+                        <span className="font-bold text-slate-700 dark:text-slate-300">{item.proposedBy || 'Logistique'}</span>
+                      </div>
+                      {item.sellingPrice !== undefined && item.sellingPrice > 0 && (
+                        <div className="flex justify-between pt-2 border-t border-slate-200 dark:border-slate-700">
+                          <span className="text-emerald-600 font-black uppercase text-[10px]">Prix Vente Public :</span>
+                          <span className="font-black text-emerald-600 text-sm">${item.sellingPrice}</span>
+                        </div>
+                      )}
+                      {item.commercialPitch && (
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
+                          <span className="font-bold text-slate-400 block text-[9px] uppercase">Pitch Marketing :</span>
+                          "{item.commercialPitch}"
+                        </div>
+                      )}
+                      {isRejected && item.rejectionReason && (
+                        <div className="p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 rounded-xl text-rose-700 dark:text-rose-300 text-[10px] font-medium">
+                          <strong>Motif du rejet :</strong> {item.rejectionReason}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions Workflow */}
+                    <div className="pt-2 flex flex-col gap-2">
+                      {/* Step 2 Action: Marketing sets price */}
+                      {isPendingMarketing && (
+                        <button
+                          onClick={() => {
+                            setSelectedProposal(item);
+                            setStudyForm({
+                              sellingPrice: item.sellingPrice || item.price || 10,
+                              commercialPitch: item.commercialPitch || '',
+                              targetAudience: item.targetAudience || 'Tous Publics'
+                            });
+                            setShowStudyModal(true);
+                          }}
+                          className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition shadow-md flex items-center justify-center gap-2 border-none cursor-pointer"
+                        >
+                          <Tag size={14} /> Étudier & Fixer Prix Vente (Marketing)
+                        </button>
+                      )}
+
+                      {/* Step 3 Action: DG / Chef / Admin approves or rejects */}
+                      {(isPendingApproval || isPendingMarketing) && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleApproveProposal(item)}
+                            className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition shadow-md flex items-center justify-center gap-1 border-none cursor-pointer"
+                          >
+                            <CheckCircle2 size={14} /> Valider & Publier (DG)
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedProposal(item);
+                              setShowRejectModal(true);
+                            }}
+                            className="py-3 px-3 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-300 font-black text-[10px] uppercase tracking-widest rounded-xl transition border-none cursor-pointer"
+                            title="Rejeter l'article"
+                          >
+                            <Ban size={14} />
+                          </button>
+                        </div>
+                      )}
+
+                      {isPublished && (
+                        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/40 rounded-xl text-center text-emerald-700 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider">
+                          ✓ Article En Ligne & Prêt aux Ventes
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {proposals.length === 0 && (
+                <div className="col-span-full py-16 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 text-center text-slate-400">
+                  <Package size={48} className="mx-auto mb-3 text-slate-300" />
+                  <p className="text-xs font-black uppercase tracking-wider">Aucune proposition en cours</p>
+                  <p className="text-[10px] mt-1">Les propositions soumises par le département Logistique apparaîtront ici pour étude marketing et décision du DG.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ========================================================================================= */}
@@ -1784,7 +2095,142 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
         )}
       </AnimatePresence>
 
-      {/* ADD CLIENT MODAL REMOVED FOR SECURITY & ROLE COHERENCE */}
+      {/* MARKETING STUDY & PRICE FIXING MODAL */}
+      <AnimatePresence>
+        {showStudyModal && selectedProposal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowStudyModal(false)} />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 relative z-10 shadow-2xl"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-[10px] font-black uppercase tracking-widest bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 px-3 py-1 rounded-full">
+                  Étape 2 : Étude Marketing & Prix
+                </span>
+                <button onClick={() => setShowStudyModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 border-none bg-transparent cursor-pointer">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-1">
+                {selectedProposal.name}
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mb-6">
+                Article proposé par la Logistique ({selectedProposal.proposedBy || 'Logistique'}) &bull; Stock : {selectedProposal.quantity} {selectedProposal.unit}
+              </p>
+
+              <form onSubmit={handleCompleteMarketingStudy} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Prix de Vente Public ($)</label>
+                  <input 
+                    type="number"
+                    required
+                    min="0"
+                    step="0.01"
+                    placeholder="Ex: 25.00"
+                    value={studyForm.sellingPrice || ''}
+                    onChange={(e) => setStudyForm({...studyForm, sellingPrice: parseFloat(e.target.value) || 0})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-lg font-black text-emerald-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cible Client Principal</label>
+                  <select
+                    value={studyForm.targetAudience}
+                    onChange={(e) => setStudyForm({...studyForm, targetAudience: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm font-bold focus:outline-none"
+                  >
+                    <option value="Tous Publics / Agriculteurs">Tous Publics / Agriculteurs</option>
+                    <option value="Éleveurs & Coopératives">Éleveurs & Coopératives</option>
+                    <option value="Centres Médicaux & Pharmacie">Centres Médicaux & Pharmacie</option>
+                    <option value="Établissements Scolaires">Établissements Scolaires</option>
+                    <option value="Entreprises & Partenaires">Entreprises & Partenaires</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pitch Commercial & Avantages</label>
+                  <textarea 
+                    rows={3}
+                    placeholder="Description attrayante pour la fiche boutique client..."
+                    value={studyForm.commercialPitch}
+                    onChange={(e) => setStudyForm({...studyForm, commercialPitch: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-xs font-medium focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowStudyModal(false)}
+                    className="flex-1 px-6 py-4 border border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-sans cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 px-6 py-4 bg-purple-600 hover:bg-purple-700 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-purple-600/20 border-none cursor-pointer"
+                  >
+                    Transmettre au DG & Chef
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* REJECTION REASON MODAL */}
+      <AnimatePresence>
+        {showRejectModal && selectedProposal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowRejectModal(false)} />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.5rem] p-8 relative z-10 shadow-2xl"
+            >
+              <h2 className="text-2xl font-black text-rose-600 dark:text-rose-400 uppercase tracking-tighter mb-2">Rejeter la Proposition</h2>
+              <p className="text-xs text-slate-500 font-medium mb-6">Article : <strong>{selectedProposal.name}</strong></p>
+
+              <form onSubmit={handleRejectProposal} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Motif de Rejet (Obligatoire)</label>
+                  <textarea 
+                    rows={4}
+                    required
+                    placeholder="Spécifiez la raison (ex: Prix non rentable, stock insuffisant, stratégie modifiée...)"
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-xs font-medium focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowRejectModal(false)}
+                    className="flex-1 px-6 py-4 border border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-sans cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 px-6 py-4 bg-rose-600 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl hover:bg-rose-700 transition-all shadow-lg border-none cursor-pointer"
+                  >
+                    Confirmer le Rejet
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

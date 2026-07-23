@@ -18,6 +18,9 @@ import {
   Stethoscope,
   BookOpen,
   Truck,
+  Phone,
+  Mail,
+  Headphones,
   X
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -33,6 +36,7 @@ export default function ClientDashboard({ onPageChange }: ClientDashboardProps) 
   const [orders, setOrders] = useState<ClientOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
   const [bookingForm, setBookingForm] = useState({
     serviceType: 'Consultation Agronomique',
     date: '',
@@ -332,12 +336,88 @@ export default function ClientDashboard({ onPageChange }: ClientDashboardProps) 
             <p className="text-white/80 font-medium">Nos experts dans chaque département sont là pour vous accompagner 24h/24.</p>
          </div>
          <button 
-           onClick={() => onPageChange?.('client-chat')}
-           className="relative z-10 px-8 py-5 bg-white text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 transition-all shadow-xl"
+           onClick={() => setIsSupportModalOpen(true)}
+           className="relative z-10 px-8 py-5 bg-white text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:scale-105 transition-all shadow-xl cursor-pointer"
          >
             Contacter le support
          </button>
       </div>
+
+      {/* Support Options Modal */}
+      {isSupportModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 font-sans text-slate-900 dark:text-white">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-lg p-8 border border-slate-100 dark:border-slate-800 shadow-2xl relative space-y-6"
+          >
+            <button 
+              onClick={() => setIsSupportModalOpen(false)}
+              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+            
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 rounded-2xl flex items-center justify-center">
+                <Headphones size={28} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Centre d'Assistance RIBERJO</h3>
+                <p className="text-slate-400 font-medium text-xs">Choisissez votre canal de communication préféré.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <button 
+                onClick={() => {
+                  setIsSupportModalOpen(false);
+                  onPageChange?.('client-chat');
+                }}
+                className="w-full p-5 bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border border-slate-100 dark:border-slate-800 hover:border-emerald-500/30 rounded-2xl flex items-center gap-4 transition-all text-left group cursor-pointer"
+              >
+                <div className="w-12 h-12 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-emerald-600/20 group-hover:scale-110 transition-transform">
+                  <MessageSquare size={22} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">Messagerie ERP Directe (Chat)</p>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">Discutez en temps réel avec nos conseillers spécialisés.</p>
+                </div>
+              </button>
+
+              <a 
+                href="https://wa.me/243999123456" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                onClick={() => setIsSupportModalOpen(false)}
+                className="w-full p-5 bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border border-slate-100 dark:border-slate-800 hover:border-emerald-500/30 rounded-2xl flex items-center gap-4 transition-all text-left group cursor-pointer block"
+              >
+                <div className="w-12 h-12 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-110 transition-transform">
+                  <Phone size={22} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">Téléphone & WhatsApp Pro</p>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">+243 999 123 456 (Assistance urgente 24h/7d)</p>
+                </div>
+              </a>
+
+              <a 
+                href="mailto:info@riberjo.com"
+                onClick={() => setIsSupportModalOpen(false)}
+                className="w-full p-5 bg-slate-50 dark:bg-slate-800/60 hover:bg-blue-50 dark:hover:bg-blue-950/30 border border-slate-100 dark:border-slate-800 hover:border-blue-500/30 rounded-2xl flex items-center gap-4 transition-all text-left group cursor-pointer block"
+              >
+                <div className="w-12 h-12 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20 group-hover:scale-110 transition-transform">
+                  <Mail size={22} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">E-mail Officiel Service Client</p>
+                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">info@riberjo.com (Réponse sous 2 heures ouvrées)</p>
+                </div>
+              </a>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Appointment Booking Modal */}
       {isBookingModalOpen && (

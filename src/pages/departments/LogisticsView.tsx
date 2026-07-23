@@ -5,6 +5,7 @@ import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { InventoryItem, InventoryTransaction } from '../../types';
 import { motion } from 'motion/react';
+import { notificationService } from '../../services/notificationService';
 
 export default function LogisticsView({ activeSpace = 'USER' }: { activeSpace?: 'USER' | 'SUPER_USER' | 'ADMIN' }) {
   const { profile } = useAuth();
@@ -76,16 +77,43 @@ export default function LogisticsView({ activeSpace = 'USER' }: { activeSpace?: 
     if (!profile) return;
 
     try {
+      // 1. Add to inventory
       await addDoc(collection(db, 'inventory'), {
         ...newItem,
         departmentId: '05',
+        workflowStatus: 'proposal_pending_marketing',
+        proposedBy: profile.fullName,
+        proposedByMatricule: profile.matricule,
         lastUpdatedBy: profile.fullName,
         updatedAt: Date.now()
       });
+
+      // 2. Add to assets collection (catalogue for marketing study & approval)
+      await addDoc(collection(db, 'assets'), {
+        name: newItem.name,
+        description: `Proposé par la Logistique. Emplacement: ${newItem.location || 'Entrepôt Logistique'}.`,
+        departmentId: '05',
+        quantity: newItem.quantity,
+        unit: newItem.unit,
+        type: newItem.category,
+        status: 'proposal_pending_marketing',
+        workflowStatus: 'proposal_pending_marketing',
+        proposedBy: profile.fullName,
+        proposedByMatricule: profile.matricule,
+        proposedAt: Date.now(),
+        lastRefill: Date.now()
+      });
+
+      // 3. Trigger notification to Marketing (Dept 04), Admins & DG
+      await notificationService.notifyStockProposal(newItem.name, profile.fullName);
+
+      alert(`Article "${newItem.name}" proposé avec succès !\n\nUne notification a été automatiquement envoyée au Département Marketing (pour fixer le prix), aux Chefs de Service et au Directeur Général (DG).`);
+
       setShowAddModal(false);
       setNewItem({ name: '', category: 'Agricole', quantity: 0, unit: 'Unité', minThreshold: 10, location: '' });
     } catch (err) {
-      console.error("Error adding item:", err);
+      console.error("Error adding item proposal:", err);
+      alert("Erreur lors de l'enregistrement de la proposition d'article.");
     }
   };
 

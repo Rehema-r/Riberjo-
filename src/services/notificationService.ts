@@ -173,5 +173,58 @@ export const notificationService = {
     } catch (err) {
       console.error(`Failed to notify role ${role}:`, err);
     }
+  },
+
+  /**
+   * Notify the Director General (DG) and Board Members
+   */
+  async notifyDG(title: string, message: string, type: 'critical' | 'info' = 'info') {
+    try {
+      const { query, collection, where, getDocs } = await import('firebase/firestore');
+      const q = query(collection(db, 'users'), where('role', 'in', ['SUPER_ADMIN', 'BOARD_MEMBER']));
+      const snap = await getDocs(q);
+      const notifications = snap.docs.map(userDoc => this.notify(userDoc.id, title, message, type));
+      await Promise.all(notifications);
+    } catch (err) {
+      console.error('Failed to notify DG:', err);
+    }
+  },
+
+  /**
+   * Workflow Notification Step 1: New stock item proposal submitted by Logistics/User
+   */
+  async notifyStockProposal(itemTitle: string, proposerName: string) {
+    const title = `📦 Nouvelle Proposition d'Article : ${itemTitle}`;
+    const msg = `L'agent ${proposerName} (Logistique) a soumis l'article "${itemTitle}" pour ajout en stock/boutique. Transmis au Marketing pour étude de prix.`;
+    // Notify Marketing Dept (04), DG, and Admins
+    await this.notifyDepartment('04', title, msg, 'info');
+    await this.notifyDG(title, msg, 'info');
+    await this.notifyRole('ADMIN', title, msg, 'info');
+  },
+
+  /**
+   * Workflow Notification Step 2: Marketing completes study and sets price
+   */
+  async notifyMarketingStudy(itemTitle: string, price: number, marketingName: string) {
+    const title = `🏷️ Étude Marketing Terminée : ${itemTitle}`;
+    const msg = `L'équipe Marketing (${marketingName}) a validé la fiche et fixé le prix de vente à $${price} pour "${itemTitle}". En attente de validation finale par le Chef/DG.`;
+    await this.notifyDG(title, msg, 'info');
+    await this.notifyDepartment('05', title, msg, 'info'); // Logistique
+    await this.notifyRole('ADMIN', title, msg, 'info');
+  },
+
+  /**
+   * Workflow Notification Step 3: Final decision (Approved or Rejected) by DG / Chef
+   */
+  async notifyStockApproval(itemTitle: string, approved: boolean, decisionBy: string, price?: number, reason?: string) {
+    const title = approved ? `✅ ARTICLE PUBLIÉ EN BOUTIQUE : ${itemTitle}` : `❌ PROPOSITION REJETÉE : ${itemTitle}`;
+    const msg = approved 
+      ? `L'article "${itemTitle}" au prix de $${price} a été Officiellement Validé et Publié en Boutique par ${decisionBy}.`
+      : `La proposition d'article "${itemTitle}" a été Rejetée par ${decisionBy}. Motif : ${reason || 'Non spécifié'}.`;
+
+    await this.notifyDG(title, msg, approved ? 'info' : 'critical');
+    await this.notifyDepartment('04', title, msg, 'info'); // Marketing
+    await this.notifyDepartment('05', title, msg, 'info'); // Logistique
+    await this.notifyRole('ADMIN', title, msg, 'info');
   }
 };

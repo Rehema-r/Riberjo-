@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, ShieldAlert, Award, FileText, Search, UserCheck, Briefcase, Mail, TrendingUp, Calendar, Trash2, Layers, AlertCircle, Sparkles, HelpCircle } from 'lucide-react';
+import { Users, UserPlus, ShieldAlert, Award, FileText, Search, UserCheck, Briefcase, Mail, TrendingUp, Calendar, Trash2, Layers, AlertCircle, Sparkles, HelpCircle, Download } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot, setDoc, doc, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
