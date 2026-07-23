@@ -371,6 +371,12 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
       };
 
       await setDoc(doc(db, 'client_orders', orderId), orderData);
+      
+      // Notify stakeholders including DG and Finances
+      await notificationService.notifyNewOrder(orderId, matchedClient.fullName, totalAmount);
+
+      alert(`Commande #${orderId.slice(-6)} créée avec succès ! Notifications envoyées aux services concernés et au DG.`);
+
       setShowAddOrderModal(false);
       setManualOrder({
         clientId: '',

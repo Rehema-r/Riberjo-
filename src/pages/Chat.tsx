@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Chat as ChatType, Message, UserProfile, Department } from '../types';
 import { Send, Hash, User as UserIcon, MoreVertical, Plus, Search, Paperclip, Smile, X, Image as ImageIcon, FileText, Download, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { notificationService } from '../services/notificationService';
 
 export default function Chat() {
   const { profile } = useAuth();
@@ -181,6 +182,14 @@ export default function Chat() {
       await updateDoc(doc(db, 'chats', activeChat.id), {
         lastMessage: messageType === 'file' ? `📁 Fichier: ${fileToUpload?.name}` : msgText,
         updatedAt: Date.now()
+      });
+
+      // Trigger instant notification for participants & department members
+      await notificationService.notifyChatMessage({
+        chat: activeChat,
+        senderId: profile.id,
+        senderName: profile.fullName,
+        text: messageType === 'file' ? `📁 Fichier: ${fileToUpload?.name}` : msgText
       });
     } catch (err) {
       console.error(err);

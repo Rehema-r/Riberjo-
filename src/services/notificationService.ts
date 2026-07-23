@@ -226,5 +226,71 @@ export const notificationService = {
     await this.notifyDepartment('04', title, msg, 'info'); // Marketing
     await this.notifyDepartment('05', title, msg, 'info'); // Logistique
     await this.notifyRole('ADMIN', title, msg, 'info');
+  },
+
+  /**
+   * Chat & Instant Messaging Notification
+   */
+  async notifyChatMessage({
+    chat,
+    senderId,
+    senderName,
+    text
+  }: {
+    chat: { id: string; name?: string; type?: string; participants?: string[]; departmentId?: string };
+    senderId: string;
+    senderName: string;
+    text: string;
+  }) {
+    try {
+      const textPreview = text.length > 70 ? text.substring(0, 67) + '...' : text;
+
+      if (chat.type === 'direct' && chat.participants) {
+        const recipientId = chat.participants.find(p => p !== senderId);
+        if (recipientId) {
+          await this.notify(recipientId, `💬 Message Privé de ${senderName}`, textPreview, 'info');
+        }
+      } else if (chat.departmentId) {
+        const { query, collection, where, getDocs } = await import('firebase/firestore');
+        const q = query(collection(db, 'users'), where('departmentId', '==', chat.departmentId));
+        const snap = await getDocs(q);
+        const notifications = snap.docs
+          .filter(u => u.id !== senderId)
+          .map(u => this.notify(u.id, `💬 [${chat.name || 'Département'}] ${senderName}`, textPreview, 'info'));
+        await Promise.all(notifications);
+      } else if (chat.participants && chat.participants.length > 0) {
+        const notifications = chat.participants
+          .filter(pId => pId !== senderId)
+          .map(pId => this.notify(pId, `💬 [${chat.name || 'Discussion'}] ${senderName}`, textPreview, 'info'));
+        await Promise.all(notifications);
+      }
+    } catch (err) {
+      console.error('Failed to notify chat message:', err);
+    }
+  },
+
+  /**
+   * New Client Order Notification
+   */
+  async notifyNewOrder(orderId: string, clientName: string, amount: number) {
+    const title = `🛍️ Nouvelle Commande Client : #${orderId.slice(-6)}`;
+    const msg = `Le client "${clientName}" a passé une commande de $${amount.toFixed(2)}. Transmis au Marketing & Finances.`;
+    await this.notifyDepartment('04', title, msg, 'info'); // Marketing
+    await this.notifyDepartment('01', title, msg, 'info'); // Finances
+    await this.notifyDG(title, msg, 'info');
+  },
+
+  /**
+   * Account / User Event Notification
+   */
+  async notifyAccountEvent(userName: string, role: string, action: 'created' | 'role_changed' | 'disabled') {
+    const title = action === 'created' 
+      ? `👤 Nouveau Compte Utilisateur : ${userName}`
+      : action === 'role_changed'
+      ? `🛡️ Changement de Rôle : ${userName}`
+      : `🚫 Compte Désactivé : ${userName}`;
+    const msg = `L'utilisateur ${userName} (${role}) a été mis à jour sur la plateforme.`;
+    await this.notifyDG(title, msg, 'info');
+    await this.notifyRole('ADMIN', title, msg, 'info');
   }
 };
