@@ -544,7 +544,7 @@ export default function Dashboard() {
             { (profile?.role !== 'SUPER_ADMIN' && profile?.role !== 'ADMIN') && <TrendingUp size={20} className="text-brand animate-pulse" /> }
           </div>
           
-          <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1">
+          <div className="space-y-3 max-h-[260px] overflow-y-auto pr-2 custom-scrollbar flex-shrink-0">
             {profile?.role === 'SUPER_ADMIN' && (
               Object.entries(departmentsStatus).map(([id, data]) => {
                 const deptData = data as any;
@@ -583,15 +583,15 @@ export default function Dashboard() {
                 }
 
                 return (
-                  <div key={id} className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all group">
-                    <div className={`w-10 h-10 ${bgClass} ${colorClass} rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform`}>
-                      <Icon size={20} />
+                  <div key={id} className="flex items-center gap-3.5 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all group">
+                    <div className={`w-9 h-9 ${bgClass} ${colorClass} rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform`}>
+                      <Icon size={18} />
                     </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">{deptName}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight truncate">{deptName}</p>
                       <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{deptData.count || 0} {deptData.label}</p>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0">
                        <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">{deptData.trend}</span>
                     </div>
                   </div>
