@@ -90,6 +90,8 @@ export interface UserProfile {
   baseSalary?: number;
   housingAllowance?: number;
   transportAllowance?: number;
+  primes?: number;
+  customDeductions?: number;
   cnssNumber?: string;
   contractType?: 'CDI' | 'CDD' | 'Stage' | 'Apprentissage';
   inppCategory?: 'Cadre' | 'Maîtrise' | 'Exécution';
@@ -145,8 +147,11 @@ export interface Payroll {
   cnssEmployerContribution?: number; // 13% CNSS Employeur
   inppContribution?: number; // 1% - 3% INPP
   onemContribution?: number; // 0.2% ONEM
+  customDeductions?: number;
   deductions: number;
   netSalary: number;
+  validatedBy?: string;
+  validatorRole?: string;
   status: 'pending' | 'paid';
   pdfUrl?: string;
   paymentDate?: number; // Added to match component

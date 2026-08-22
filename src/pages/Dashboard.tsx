@@ -966,27 +966,6 @@ export default function Dashboard() {
               ))
             )}
           </div>
-
-          <div className="mt-8 pt-8 border-t border-slate-50 dark:border-slate-800">
-             <motion.div 
-               whileHover={{ scale: 1.02 }}
-               className="flex flex-col gap-4 p-6 bg-slate-900 dark:bg-emerald-600 rounded-[1.5rem] group cursor-pointer shadow-xl relative overflow-hidden"
-             >
-                <div className="relative z-10">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center backdrop-blur-md">
-                      <BrainCircuit size={18} className="text-emerald-400" />
-                    </div>
-                    <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Conseiller IA RIBERJO</p>
-                  </div>
-                  <p className="text-sm font-bold text-white leading-snug italic">
-                    "{aiAdvice || "Analyse opérationnelle en cours... Vérification des protocoles de sécurité."}"
-                  </p>
-                </div>
-                {/* Background Decoration */}
-                <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-emerald-500/20 rounded-full blur-2xl"></div>
-             </motion.div>
-          </div>
         </div>
 
         {/* Global Recent Reports */}
