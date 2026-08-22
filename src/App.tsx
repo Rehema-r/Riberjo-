@@ -24,6 +24,7 @@ import ClientRegister from './pages/client/Register';
 import ClientAgriculture from './pages/client/Agriculture';
 import ClientHealth from './pages/client/Health';
 import ClientEducation from './pages/client/Education';
+import ClientStore from './pages/client/Store';
 import Verify from './pages/Verify';
 import Notifications from './pages/Notifications';
 import PasswordChangeModal from './components/PasswordChangeModal';
@@ -236,13 +237,17 @@ export default function App() {
       case 'finance': return <DepartmentHub departmentId="04" />;
       case 'logistique': return <DepartmentHub departmentId="05" />;
       case 'marketing': return <DepartmentHub departmentId="06" />;
+      case 'école':
+      case 'ecole':
+      case 'education':
+      case 'school': return <DepartmentHub departmentId="07" />;
       // Client Pages
       case 'client-dashboard': return <ClientDashboard />;
       case 'client-profile': return <Settings initialTab="profile" />;
       case 'client-agriculture': return <ClientAgriculture />;
       case 'client-health': return <ClientHealth />;
       case 'client-education': return <ClientEducation />;
-      case 'client-commerce': return <div className="p-12 text-center text-slate-400 font-bold uppercase tracking-widest">Module Boutique en cours de déploiement...</div>;
+      case 'client-commerce': return <ClientStore />;
       case 'client-logistics': return <div className="p-12 text-center text-slate-400 font-bold uppercase tracking-widest">Module Logistique en cours de déploiement...</div>;
       case 'client-payments': return <div className="p-12 text-center text-slate-400 font-bold uppercase tracking-widest">Module Paiements en cours de déploiement...</div>;
       case 'client-support': return <div className="p-12 text-center text-slate-400 font-bold uppercase tracking-widest">Module Support en cours de déploiement...</div>;

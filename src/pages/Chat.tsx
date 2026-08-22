@@ -77,6 +77,18 @@ export default function Chat() {
       (snap) => {
         const chatList = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatType));
         setChats(chatList);
+        
+        // Check if there is a target chat requested from notification
+        const targetChatId = sessionStorage.getItem('target_chat_id');
+        if (targetChatId) {
+          sessionStorage.removeItem('target_chat_id');
+          const target = chatList.find(c => c.id === targetChatId);
+          if (target) {
+            setActiveChat(target);
+            return;
+          }
+        }
+
         if (!activeChat && chatList.length > 0) {
           // Find my department chat if exists
           const myDeptChat = chatList.find(c => c.departmentId === profile.departmentId);
@@ -88,7 +100,23 @@ export default function Chat() {
       }
     );
 
-    return () => unsubscribe();
+    const handleCustomSelect = (e: any) => {
+      const chatId = e.detail?.chatId;
+      if (chatId) {
+        setChats(currentChats => {
+          const found = currentChats.find(c => c.id === chatId);
+          if (found) setActiveChat(found);
+          return currentChats;
+        });
+      }
+    };
+
+    window.addEventListener('select_chat', handleCustomSelect);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('select_chat', handleCustomSelect);
+    };
   }, [profile]);
 
   useEffect(() => {

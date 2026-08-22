@@ -17,10 +17,12 @@ import {
   PenTool
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import PaymentGatewayModal from '../../components/PaymentGatewayModal';
 
 export default function ClientEducation() {
   const { profile } = useAuth();
   const [activeTab, setActiveTab ] = useState('home');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   return (
     <div className="space-y-12 pb-20">
@@ -101,7 +103,13 @@ export default function ClientEducation() {
                       <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Frais Soldés</p>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Aucun arriéré</p>
                    </div>
-                   <button className="w-full py-4 bg-slate-50 dark:bg-slate-800 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-brand hover:text-white transition-all flex items-center justify-center gap-2">
+                   <button 
+                      onClick={() => setShowPaymentModal(true)}
+                      className="w-full py-4 bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+                   >
+                      <CreditCard size={16} /> Payer Minerval (M-Pesa / Card)
+                   </button>
+                   <button className="w-full py-3 bg-slate-50 dark:bg-slate-800 text-slate-500 font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2">
                       <Download size={14} /> Historique des Reçus
                    </button>
                 </div>
@@ -156,6 +164,15 @@ export default function ClientEducation() {
            </div>
         </div>
       )}
+
+      <PaymentGatewayModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        title="Paiement Minerval & Frais Scolaires"
+        defaultAmount={150}
+        referenceReason="Acompte Minerval Complexe Scolaire RIBERJO"
+        category="school"
+      />
     </div>
   );
 }

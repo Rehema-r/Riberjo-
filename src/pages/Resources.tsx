@@ -16,7 +16,10 @@ import {
   BookOpen,
   Trash2,
   Edit2,
-  X
+  X,
+  ShoppingCart,
+  Tag,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
@@ -38,9 +41,14 @@ export default function Resources() {
     departmentId: '',
     quantity: 0,
     unit: '',
-    status: 'in_stock' as const
+    status: 'in_stock' as const,
+    publishToBoutique: false,
+    sellingPrice: 0,
+    commercialPitch: ''
   });
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
+  const [publishingPrice, setPublishingPrice] = useState<number>(0);
+  const [publishingPitch, setPublishingPitch] = useState<string>('');
 
   useEffect(() => {
     fetchData();
@@ -74,8 +82,21 @@ export default function Resources() {
     e.preventDefault();
     try {
       const assetPath = 'assets';
-      const docRef = await addDoc(collection(db, assetPath), {
-        ...formData,
+      const isPublished = formData.publishToBoutique && formData.sellingPrice > 0;
+      
+      await addDoc(collection(db, assetPath), {
+        name: formData.name,
+        description: formData.description,
+        imageUrl: formData.imageUrl,
+        departmentId: formData.departmentId,
+        quantity: formData.quantity,
+        unit: formData.unit,
+        status: formData.status,
+        sellingPrice: isPublished ? formData.sellingPrice : 0,
+        commercialPitch: formData.commercialPitch || '',
+        workflowStatus: isPublished ? 'published' : 'proposal_pending_marketing',
+        publishedBy: isPublished ? profile?.fullName : undefined,
+        publishedAt: isPublished ? Date.now() : undefined,
         lastRefill: Date.now()
       });
 
@@ -88,6 +109,7 @@ export default function Resources() {
                  `Quantité: ${formData.quantity} ${formData.unit}\n` +
                  `Département: ${departments.find(d => d.id === formData.departmentId)?.name || formData.departmentId}\n` +
                  `Description: ${formData.description || 'Non fournie'}\n` +
+                 `Publié en Boutique: ${isPublished ? 'Oui ($' + formData.sellingPrice + ')' : 'Non'}\n` +
                  `Date: ${new Date().toLocaleString()}\n` +
                  `Statut initial: ${formData.status}`,
         status: 'pending',
@@ -98,17 +120,50 @@ export default function Resources() {
       });
 
       setShowAddModal(false);
-      setFormData({ name: '', description: '', imageUrl: '', departmentId: '', quantity: 0, unit: '', status: 'in_stock' });
+      setFormData({ name: '', description: '', imageUrl: '', departmentId: '', quantity: 0, unit: '', status: 'in_stock', publishToBoutique: false, sellingPrice: 0, commercialPitch: '' });
       fetchData();
       
       notificationService.notify(
         profile?.id || '',
         'Inventaire mis à jour',
-        `L'article "${formData.name}" a été ajouté et un rapport a été généré.`,
+        `L'article "${formData.name}" a été ajouté ${isPublished ? 'et publié directement en Boutique Client' : ''}.`,
         'info'
       );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'assets');
+    }
+  };
+
+  const handleToggleBoutiquePublish = async (asset: Asset, newPrice?: number, pitch?: string) => {
+    try {
+      const isCurrentlyPublished = asset.workflowStatus === 'published' || (asset as any).sellingPrice > 0;
+      const targetPrice = newPrice !== undefined ? newPrice : ((asset as any).sellingPrice || 10);
+      const targetPitch = pitch !== undefined ? pitch : ((asset as any).commercialPitch || '');
+
+      const newStatus = isCurrentlyPublished && newPrice === undefined ? 'proposal_pending_marketing' : 'published';
+      const updatedPrice = newStatus === 'published' ? targetPrice : 0;
+
+      await updateDoc(doc(db, 'assets', asset.id), {
+        workflowStatus: newStatus,
+        sellingPrice: updatedPrice,
+        commercialPitch: targetPitch,
+        status: 'in_stock',
+        publishedBy: profile?.fullName,
+        publishedAt: Date.now()
+      });
+
+      if (newStatus === 'published') {
+        await notificationService.notifyStorePublication(asset.name, updatedPrice, profile?.fullName || 'Direction');
+        alert(`Article "${asset.name}" maintenant visible en Boutique Client au prix de $${updatedPrice} !`);
+      } else {
+        alert(`Article "${asset.name}" retiré de la Boutique Client.`);
+      }
+
+      setViewingAsset(null);
+      fetchData();
+    } catch (err) {
+      console.error("Error toggling boutique publish:", err);
+      alert("Erreur lors de la modification de la publication en boutique.");
     }
   };
 
@@ -253,14 +308,21 @@ export default function Resources() {
                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Département</th>
                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Quantité</th>
                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Statut</th>
+                     <th className="px-8 py-5 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Boutique Client</th>
                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest text-right">Actions</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                  {filteredAssets.map(asset => (
+                  {filteredAssets.map(asset => {
+                    const isPublished = asset.workflowStatus === 'published' || ((asset as any).sellingPrice && (asset as any).sellingPrice > 0);
+                    return (
                        <tr 
                         key={asset.id} 
-                        onClick={() => setViewingAsset(asset)}
+                        onClick={() => {
+                          setViewingAsset(asset);
+                          setPublishingPrice((asset as any).sellingPrice || 10);
+                          setPublishingPitch((asset as any).commercialPitch || '');
+                        }}
                         className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors group cursor-pointer"
                       >
                          <td className="px-8 py-5">
@@ -303,20 +365,48 @@ export default function Resources() {
                                {asset.status.replace('_', ' ')}
                             </span>
                          </td>
+                         <td className="px-8 py-5">
+                            {isPublished ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider rounded-full border border-emerald-500/20">
+                                <ShoppingCart size={12} /> en Boutique (${(asset as any).sellingPrice || 0})
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-400 text-[10px] font-bold uppercase tracking-wider rounded-full">
+                                Non Publié
+                              </span>
+                            )}
+                         </td>
                          <td className="px-8 py-5 text-right">
                             <div className="flex justify-end gap-2">
                                {canManage && (
-                                 <button 
-                                   onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
-                                   className="p-2 text-slate-300 dark:text-slate-700 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
-                                 >
-                                   <Trash2 size={18} />
-                                 </button>
+                                 <>
+                                   <button 
+                                     onClick={(e) => { 
+                                       e.stopPropagation(); 
+                                       handleToggleBoutiquePublish(asset);
+                                     }}
+                                     title={isPublished ? "Retirer de la boutique" : "Publier rapidement en boutique"}
+                                     className={`p-2 rounded-lg transition-all border-none cursor-pointer ${
+                                       isPublished 
+                                         ? 'bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-950/50 dark:text-purple-300' 
+                                         : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 dark:bg-slate-800 dark:text-slate-400'
+                                     }`}
+                                   >
+                                     <ShoppingCart size={16} />
+                                   </button>
+                                   <button 
+                                     onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
+                                     className="p-2 text-slate-300 dark:text-slate-700 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
+                                   >
+                                     <Trash2 size={18} />
+                                   </button>
+                                 </>
                                )}
                             </div>
                          </td>
-                      </tr>
-                  ))}
+                       </tr>
+                    );
+                  })}
                </tbody>
             </table>
          </div>
@@ -384,7 +474,7 @@ export default function Resources() {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 mb-8">
                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl text-center">
                       <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Dernier approv.</p>
                       <p className="text-xs font-bold text-slate-900 dark:text-white">{new Date(viewingAsset.lastRefill).toLocaleDateString()}</p>
@@ -394,6 +484,64 @@ export default function Resources() {
                       <p className="text-xs font-bold text-slate-900 dark:text-white font-mono">{viewingAsset.id.slice(0, 8).toUpperCase()}</p>
                    </div>
                 </div>
+
+                {/* Direct Boutique Publishing Box */}
+                {canManage && (
+                  <div className="p-6 bg-gradient-to-r from-purple-500/10 to-emerald-500/10 rounded-2xl border border-purple-500/20 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <ShoppingCart className="text-purple-600 dark:text-purple-400" size={20} />
+                        <h4 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                          Boutique Client RIBERJO
+                        </h4>
+                      </div>
+                      <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
+                        viewingAsset.workflowStatus === 'published' || (viewingAsset as any).sellingPrice > 0
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {viewingAsset.workflowStatus === 'published' || (viewingAsset as any).sellingPrice > 0 ? '🟢 Publié' : '⚪ Masqué'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Prix de Vente ($)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={publishingPrice}
+                          onChange={(e) => setPublishingPrice(parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-emerald-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Accroche / Pitch</label>
+                        <input
+                          type="text"
+                          placeholder="Offre spéciale, bio..."
+                          value={publishingPitch}
+                          onChange={(e) => setPublishingPitch(e.target.value)}
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleToggleBoutiquePublish(viewingAsset, publishingPrice, publishingPitch)}
+                      className={`w-full py-3 font-black text-xs uppercase tracking-widest rounded-xl transition-all border-none cursor-pointer flex items-center justify-center gap-2 ${
+                        viewingAsset.workflowStatus === 'published' || (viewingAsset as any).sellingPrice > 0
+                          ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                          : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg'
+                      }`}
+                    >
+                      {viewingAsset.workflowStatus === 'published' || (viewingAsset as any).sellingPrice > 0
+                        ? 'Retirer de la Boutique'
+                        : '🚀 Publier Immédiatement en Boutique'}
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
@@ -484,6 +632,49 @@ export default function Resources() {
                       onChange={(e) => setFormData({...formData, unit: e.target.value})}
                       className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600"
                     />
+                 </div>
+
+                 {/* Boutique Publishing Section */}
+                 <div className="p-4 bg-purple-500/10 rounded-2xl border border-purple-500/20 space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input 
+                        type="checkbox"
+                        checked={formData.publishToBoutique}
+                        onChange={(e) => setFormData({...formData, publishToBoutique: e.target.checked})}
+                        className="w-5 h-5 accent-purple-600 rounded cursor-pointer"
+                      />
+                      <span className="text-xs font-black uppercase tracking-wide text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                        <ShoppingCart size={16} /> Publier immédiatement en Boutique Client
+                      </span>
+                    </label>
+
+                    {formData.publishToBoutique && (
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Prix de Vente ($)</label>
+                          <input 
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required={formData.publishToBoutique}
+                            value={formData.sellingPrice || ''}
+                            onChange={(e) => setFormData({...formData, sellingPrice: parseFloat(e.target.value) || 0})}
+                            placeholder="ex: 25.00"
+                            className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-purple-200 dark:border-slate-700 rounded-xl text-xs font-bold text-emerald-600"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Accroche Commerciale</label>
+                          <input 
+                            type="text"
+                            value={formData.commercialPitch}
+                            onChange={(e) => setFormData({...formData, commercialPitch: e.target.value})}
+                            placeholder="ex: Produit frais de la ferme"
+                            className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-purple-200 dark:border-slate-700 rounded-xl text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+                    )}
                  </div>
 
                  <div className="flex gap-4 pt-4">

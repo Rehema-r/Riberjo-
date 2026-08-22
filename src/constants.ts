@@ -5,6 +5,7 @@ export const DEPARTMENTS = [
   { id: '04', name: 'Finance & Comptabilité', code: 'FI', description: 'Trésorerie, audit et fiscalité.' },
   { id: '05', name: 'Logistique & Transport', code: 'LO', description: 'Approvisionnement et gestion de la flotte.' },
   { id: '06', name: 'Marketing & Ventes', code: 'MV', description: 'Communication et relations clients.' },
+  { id: '07', name: 'Éducation & Écoles', code: 'ED', description: 'Gestion des établissements scolaires, élèves, minerval et bulletins.' },
 ];
 
 /**
@@ -36,6 +37,10 @@ export const SERVICES_LIST = [
   { id: '01', deptId: '06', name: 'Ventes & Distribution' },
   { id: '02', deptId: '06', name: 'Communication & Design' },
   { id: '03', deptId: '06', name: 'Études de Marché' },
+  // Éducation
+  { id: '01', deptId: '07', name: 'Scolarité & Inscriptions' },
+  { id: '02', deptId: '07', name: 'Comptabilité Scolaire & Caisse' },
+  { id: '03', deptId: '07', name: 'Pédagogie & Bulletins' },
 ];
 
 export const SERVICE_CODES: Record<string, string> = {

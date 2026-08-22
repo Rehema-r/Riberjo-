@@ -15,6 +15,7 @@ import {
   History
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import ClientStore from './Store';
 
 export default function ClientAgriculture() {
   const { profile } = useAuth();
@@ -154,14 +155,7 @@ export default function ClientAgriculture() {
       )}
 
       {activeTab === 'market' && (
-        <div className="space-y-8">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <ProductCard name="Semences Maïs Hybride" price="$25/kg" category="Semences" />
-              <ProductCard name="Engrais NPK 17-17-17" price="$45/sac" category="Fertilisants" />
-              <ProductCard name="Pulvérisateur 16L" price="$60/unit" category="Matériel" />
-              <ProductCard name="Aliment Volailles" price="$35/sac" category="Élevage" />
-           </div>
-        </div>
+        <ClientStore />
       )}
     </div>
   );

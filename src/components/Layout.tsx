@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -29,7 +29,9 @@ import {
   Clock,
   Calendar,
   Wifi,
-  WifiOff
+  WifiOff,
+  AlertTriangle,
+  ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../lib/SettingsContext';
@@ -38,6 +40,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, orderBy, onSnapshot, getDocs, updateDoc, doc, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { AppNotification } from '../types';
+import { playMessageChime, playAlertChime } from '../utils/sound';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -53,10 +56,14 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [filterTasksOnly, setFilterTasksOnly] = useState(false);
+  const [filterCategory, setFilterCategory] = useState<'all' | 'tasks' | 'messages' | 'alerts'>('all');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? navigator.onLine : true);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  const [toastNotification, setToastNotification] = useState<AppNotification | null>(null);
+
+  const isInitialSnapshotRef = useRef(true);
+  const mountTimestampRef = useRef<number>(Date.now());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -75,6 +82,15 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
     };
   }, []);
 
+  // Request browser notification permission once on login
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!profile) return;
 
@@ -82,13 +98,47 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
       collection(db, 'notifications'),
       where('userId', '==', profile.id),
       orderBy('createdAt', 'desc'),
-      limit(20)
+      limit(30)
     );
 
     const unsubscribe = onSnapshot(q, {
       next: (snapshot) => {
         const notifs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification));
         setNotifications(notifs);
+
+        // Detect newly arrived notifications in real-time
+        if (!isInitialSnapshotRef.current) {
+          snapshot.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const newNotif = { id: change.doc.id, ...change.doc.data() } as AppNotification;
+              if (!newNotif.read && newNotif.createdAt >= mountTimestampRef.current - 5000) {
+                // Play chime
+                if (newNotif.type === 'critical' || newNotif.isCriticalAlert) {
+                  playAlertChime();
+                } else {
+                  playMessageChime();
+                }
+
+                // Show in-app live toast
+                setToastNotification(newNotif);
+
+                // Show browser desktop notification if permission granted
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  try {
+                    new Notification(newNotif.title, {
+                      body: newNotif.message,
+                      icon: settings?.logoUrl || '/logo.png'
+                    });
+                  } catch (e) {
+                    console.warn("Browser notification failed:", e);
+                  }
+                }
+              }
+            }
+          });
+        }
+
+        isInitialSnapshotRef.current = false;
       },
       error: (err) => {
         console.warn("Notifications onSnapshot operates in local cache mode:", err.message);
@@ -96,11 +146,39 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
     });
 
     return () => unsubscribe();
-  }, [profile]);
+  }, [profile, settings]);
 
-  const taskNotifications = notifications.filter(n => n.type === 'task' || n.title.includes('Tâche'));
+  // Auto dismiss toast after 6 seconds
+  useEffect(() => {
+    if (!toastNotification) return;
+    const timer = setTimeout(() => {
+      setToastNotification(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [toastNotification]);
+
+  const taskNotifications = notifications.filter(n => n.type === 'task' || n.title.toLowerCase().includes('tâche'));
+  const messageNotifications = notifications.filter(n => n.type === 'message' || n.chatId || n.title.toLowerCase().includes('message'));
+  const alertNotifications = notifications.filter(n => n.type === 'critical' || n.isCriticalAlert);
+
+  const getFilteredNotifications = () => {
+    switch (filterCategory) {
+      case 'tasks':
+        return taskNotifications;
+      case 'messages':
+        return messageNotifications;
+      case 'alerts':
+        return alertNotifications;
+      case 'all':
+      default:
+        return notifications;
+    }
+  };
+
   const unreadCount = notifications.filter(n => !n.read).length;
   const taskUnreadCount = taskNotifications.filter(n => !n.read).length;
+  const messageUnreadCount = messageNotifications.filter(n => !n.read).length;
+  const alertUnreadCount = alertNotifications.filter(n => !n.read).length;
 
   const markAsRead = async (notifId: string) => {
     try {
@@ -119,6 +197,25 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleNotificationClick = async (n: AppNotification) => {
+    await markAsRead(n.id);
+    if (n.type === 'message' || n.chatId || n.title.toLowerCase().includes('message')) {
+      if (n.chatId) {
+        sessionStorage.setItem('target_chat_id', n.chatId);
+        window.dispatchEvent(new CustomEvent('select_chat', { detail: { chatId: n.chatId } }));
+      }
+      onPageChange('chat');
+    } else if (n.type === 'task' || n.title.toLowerCase().includes('tâche')) {
+      onPageChange('tasks');
+    } else if (n.type === 'report' || n.title.toLowerCase().includes('rapport')) {
+      onPageChange('reports');
+    } else {
+      onPageChange('notifications');
+    }
+    setIsNotificationsOpen(false);
+    setToastNotification(null);
   };
 
   const menuItems = [
@@ -241,28 +338,45 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
         </div>
 
         <nav className="flex-1 px-4 space-y-1 py-4 overflow-y-auto scrollbar-hide">
-          {filteredItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handlePageChange(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all group relative ${
-                activePage === item.id 
-                  ? 'bg-brand-light text-brand' 
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <item.icon size={22} className={activePage === item.id ? 'text-brand' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'} />
-              {(isSidebarOpen || isMobileMenuOpen) && (
-                <span className="font-medium text-sm whitespace-nowrap">{item.label}</span>
-              )}
-              {activePage === item.id && (
-                <motion.div 
-                   layoutId="active-pill"
-                   className="absolute right-0 w-1 h-6 bg-brand rounded-l-full" 
-                />
-              )}
-            </button>
-          ))}
+          {filteredItems.map((item) => {
+            const badgeCount = item.id === 'chat' ? messageUnreadCount : item.id === 'tasks' ? taskUnreadCount : 0;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handlePageChange(item.id)}
+                className={`w-full flex items-center justify-between px-3 py-3 rounded-xl transition-all group relative ${
+                  activePage === item.id 
+                    ? 'bg-brand-light text-brand' 
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <item.icon size={22} className={activePage === item.id ? 'text-brand' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'} />
+                  {(isSidebarOpen || isMobileMenuOpen) && (
+                    <span className="font-medium text-sm whitespace-nowrap">{item.label}</span>
+                  )}
+                </div>
+
+                {/* Badge alert indicator */}
+                {badgeCount > 0 && (
+                  <span className={`px-2 py-0.5 text-[10px] font-black rounded-full shadow-sm animate-pulse ${
+                    item.id === 'chat' 
+                      ? 'bg-emerald-500 text-white' 
+                      : 'bg-red-500 text-white'
+                  }`}>
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
+
+                {activePage === item.id && (
+                  <motion.div 
+                     layoutId="active-pill"
+                     className="absolute right-0 w-1 h-6 bg-brand rounded-l-full" 
+                  />
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-slate-100 dark:border-slate-800">
@@ -357,19 +471,16 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
 
             <div className="relative">
               <button 
-                onClick={() => {
-                  setIsNotificationsOpen(!isNotificationsOpen);
-                  setFilterTasksOnly(true);
-                }}
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                 className="relative p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors group"
               >
                 <Bell size={20} className="group-hover:rotate-12 transition-transform" />
-                {taskUnreadCount > 0 ? (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-white dark:border-slate-900 shadow-sm">
-                    {taskUnreadCount}
+                {unreadCount > 0 && (
+                  <span className={`absolute -top-1 -right-1 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-white dark:border-slate-900 shadow-md ${
+                    alertUnreadCount > 0 ? 'bg-red-600 animate-bounce' : 'bg-brand'
+                  }`}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
-                ) : unreadCount > 0 && (
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-blue-500 border-2 border-white dark:border-slate-900 rounded-full"></span>
                 )}
               </button>
 
@@ -382,103 +493,157 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="fixed inset-x-4 top-20 bottom-4 sm:bottom-auto sm:absolute sm:inset-auto sm:right-0 sm:mt-2 sm:w-96 bg-white dark:bg-slate-900 rounded-[2rem] sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden flex flex-col"
+                      className="fixed inset-x-4 top-20 bottom-4 sm:bottom-auto sm:absolute sm:inset-auto sm:right-0 sm:mt-2 sm:w-[420px] bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden flex flex-col"
                     >
-                      <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-brand/10 rounded-lg text-brand">
-                             <Bell size={14} />
+                      <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-brand/10 rounded-lg text-brand">
+                               <Bell size={16} />
+                            </div>
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">
+                              Notifications & Alertes
+                            </h3>
                           </div>
-                          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-                            {filterTasksOnly ? 'Tâches assignées' : 'Notifications'}
-                          </h3>
+                          <div className="flex items-center gap-2">
+                            {unreadCount > 0 && (
+                              <button 
+                                id="mark-all-read"
+                                onClick={markAllAsRead}
+                                className="text-[10px] font-black uppercase text-brand hover:underline"
+                              >
+                                Tout marquer lu
+                              </button>
+                            )}
+                            <button 
+                              id="close-notifs"
+                              onClick={() => setIsNotificationsOpen(false)}
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          {filterTasksOnly && notifications.length > taskNotifications.length && (
-                            <button 
-                              id="view-all-notifs"
-                              onClick={() => setFilterTasksOnly(false)}
-                              className="text-[9px] font-black uppercase text-brand hover:underline"
-                            >
-                              Voir tout
-                            </button>
-                          )}
-                          {unreadCount > 0 && (
-                            <button 
-                              id="mark-all-read"
-                              onClick={markAllAsRead}
-                              className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                            >
-                              Tout lu
-                            </button>
-                          )}
-                          <button 
-                            id="close-notifs"
-                            onClick={() => setIsNotificationsOpen(false)}
-                            className="sm:hidden p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400"
+
+                        {/* Filter Tabs */}
+                        <div className="flex gap-1 p-1 bg-slate-200/60 dark:bg-slate-800/60 rounded-xl">
+                          <button
+                            onClick={() => setFilterCategory('all')}
+                            className={`flex-1 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
+                              filterCategory === 'all' 
+                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' 
+                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                            }`}
                           >
-                            <X size={16} />
+                            Toutes ({notifications.length})
+                          </button>
+                          <button
+                            onClick={() => setFilterCategory('messages')}
+                            className={`flex-1 py-1 text-[10px] font-black uppercase rounded-lg transition-all flex items-center justify-center gap-1 ${
+                              filterCategory === 'messages' 
+                                ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' 
+                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            💬 Messages {messageUnreadCount > 0 && <span className="w-2 h-2 rounded-full bg-emerald-500"></span>}
+                          </button>
+                          <button
+                            onClick={() => setFilterCategory('tasks')}
+                            className={`flex-1 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
+                              filterCategory === 'tasks' 
+                                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' 
+                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            Tâches ({taskNotifications.length})
+                          </button>
+                          <button
+                            onClick={() => setFilterCategory('alerts')}
+                            className={`flex-1 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
+                              filterCategory === 'alerts' 
+                                ? 'bg-white dark:bg-slate-700 text-red-600 dark:text-red-400 shadow-sm' 
+                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            Alertes ({alertNotifications.length})
                           </button>
                         </div>
                       </div>
-                      <div className="flex-1 overflow-y-auto scrollbar-hide py-2">
-                        {(filterTasksOnly ? taskNotifications : notifications).length === 0 ? (
-                          <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-100 dark:border-slate-800">
-                              <Bell size={24} className="text-slate-200 dark:text-slate-700" />
+
+                      {/* Dropdown Items List */}
+                      <div className="flex-1 overflow-y-auto max-h-[380px] scrollbar-hide divide-y divide-slate-100 dark:divide-slate-800">
+                        {getFilteredNotifications().length === 0 ? (
+                          <div className="h-48 flex flex-col items-center justify-center p-8 text-center">
+                            <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800/50 rounded-full flex items-center justify-center mb-3 border border-slate-100 dark:border-slate-800">
+                              <Bell size={20} className="text-slate-300 dark:text-slate-600" />
                             </div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                              {filterTasksOnly ? 'Aucune tâche' : 'Aucune notification'}
+                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                              Aucune notification dans cette vue
                             </p>
                           </div>
                         ) : (
-                          (filterTasksOnly ? taskNotifications : notifications).map(n => (
+                          getFilteredNotifications().map(n => (
                             <div 
                               key={n.id} 
                               id={`notif-${n.id}`}
-                              onClick={() => {
-                                markAsRead(n.id);
-                                if (windowWidth < 640) setIsNotificationsOpen(false);
-                              }}
-                              className={`p-5 border-b border-slate-50 dark:border-slate-800 last:border-0 cursor-pointer transition-all relative hover:bg-slate-50 dark:hover:bg-slate-800/50 ${n.read ? 'opacity-60' : 'bg-emerald-50/20 dark:bg-emerald-500/5'}`}
+                              onClick={() => handleNotificationClick(n)}
+                              className={`p-4 cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-start gap-3 ${
+                                n.read ? 'opacity-70 bg-white dark:bg-slate-900' : 'bg-emerald-50/20 dark:bg-emerald-500/5'
+                              }`}
                             >
-                              <div className="flex gap-4">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                                  n.type === 'task' ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600' :
-                                  n.type === 'report' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600' :
-                                  'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600'
-                                }`}>
-                                  {n.type === 'task' ? <CheckSquare size={18} /> : 
-                                   n.type === 'report' ? <FileText size={18} /> : <Info size={18} />}
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                                n.type === 'message' || n.chatId ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                                n.type === 'task' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400' :
+                                n.type === 'report' ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400' :
+                                n.type === 'critical' || n.isCriticalAlert ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400' :
+                                'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                              }`}>
+                                {n.type === 'message' || n.chatId ? <MessageSquare size={16} /> :
+                                 n.type === 'task' ? <CheckSquare size={16} /> : 
+                                 n.type === 'report' ? <FileText size={16} /> : 
+                                 n.type === 'critical' || n.isCriticalAlert ? <AlertTriangle size={16} /> :
+                                 <Info size={16} />}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2 mb-0.5">
+                                  <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                                    {n.title}
+                                  </p>
+                                  {!n.read && (
+                                    <span className="w-2 h-2 rounded-full bg-brand shrink-0 animate-pulse" />
+                                  )}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-start mb-0.5 gap-2">
-                                    <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">{n.title}</p>
-                                    {!n.read && <div className="w-2 h-2 bg-brand rounded-full shrink-0 animate-pulse mt-1" />}
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed line-clamp-2">{n.message}</p>
-                                  <div className="flex items-center gap-2 mt-2">
-                                    <Clock size={10} className="text-slate-300" />
-                                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
-                                      {new Date(n.createdAt).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
-                                    </p>
-                                  </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed line-clamp-2">
+                                  {n.message}
+                                </p>
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                                    {new Date(n.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  {(n.type === 'message' || n.chatId) && (
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1 hover:underline">
+                                      Répondre <ArrowRight size={10} />
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
                           ))
                         )}
                       </div>
-                      <div className="p-4 bg-slate-50/50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 shrink-0">
+
+                      {/* Dropdown Footer */}
+                      <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 shrink-0">
                          <button 
                            id="nav-to-history"
                            onClick={() => {
                              onPageChange('notifications');
                              setIsNotificationsOpen(false);
                            }}
-                           className="w-full py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-sans"
+                           className="w-full py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-center"
                          >
-                           Voir l'historique complet
+                           Voir tout le centre de notifications
                          </button>
                       </div>
                     </motion.div>
@@ -507,6 +672,67 @@ export default function Layout({ children, activePage, onPageChange }: LayoutPro
         <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-hide dark:bg-slate-950 transition-colors duration-300">
           {children}
         </div>
+
+        {/* Real-time Floating Message & Alert Toast Banner */}
+        <AnimatePresence>
+          {toastNotification && (
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.9 }}
+              className="fixed bottom-6 right-6 z-[99] max-w-sm w-full bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border-2 border-emerald-500/30 p-4 backdrop-blur-xl flex items-start gap-3.5"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                toastNotification.type === 'message' || toastNotification.chatId 
+                  ? 'bg-emerald-600 text-white' 
+                  : toastNotification.type === 'critical' || toastNotification.isCriticalAlert
+                  ? 'bg-red-600 text-white'
+                  : 'bg-blue-600 text-white'
+              }`}>
+                {toastNotification.type === 'message' || toastNotification.chatId ? (
+                  <MessageSquare size={18} />
+                ) : toastNotification.type === 'critical' || toastNotification.isCriticalAlert ? (
+                  <AlertTriangle size={18} />
+                ) : (
+                  <Bell size={18} />
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1 mb-1">
+                  <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
+                    {toastNotification.title}
+                  </h4>
+                  <button 
+                    onClick={() => setToastNotification(null)}
+                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 font-medium line-clamp-2 leading-relaxed">
+                  {toastNotification.message}
+                </p>
+
+                <div className="flex items-center gap-2 mt-3">
+                  <button
+                    onClick={() => handleNotificationClick(toastNotification)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-1.5 transition-colors"
+                  >
+                    {toastNotification.type === 'message' || toastNotification.chatId ? '💬 Répondre' : 'Consulter'}
+                    <ArrowRight size={12} />
+                  </button>
+                  <button
+                    onClick={() => setToastNotification(null)}
+                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    Ignorer
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

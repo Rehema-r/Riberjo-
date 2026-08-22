@@ -271,16 +271,6 @@ export default function ClientRegister() {
                         />
                       </div>
                    </div>
-                   <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Type de Client</label>
-                      <select 
-                        value={formData.type}
-                        onChange={(e) => setFormData({...formData, type: e.target.value as ClientType})}
-                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-brand/20 transition-all"
-                      >
-                        {CLIENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                      </select>
-                   </div>
                 </div>
 
                 {error && <p className="text-xs font-bold text-red-500 text-center mb-4">{error}</p>}

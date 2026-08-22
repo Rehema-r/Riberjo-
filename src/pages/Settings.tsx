@@ -881,6 +881,9 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                             <span className="text-[6.5px] font-black text-slate-400 uppercase tracking-widest block">Unité / Service</span>
                             <span className="text-[9px] font-black text-slate-800 leading-none block truncate max-w-[110px]">
                               {(() => {
+                                if (profile?.role === "ADMIN" || profile?.role === "SUPER_ADMIN" || profile?.role === "BOARD_MEMBER" || profile?.serviceId === "all") {
+                                  return "Tous les services";
+                                }
                                 const matchingService = SERVICES_LIST.find(
                                   (s) =>
                                     s.deptId === profile?.departmentId &&
@@ -1049,6 +1052,9 @@ export default function Settings({ initialTab = 'profile' }: SettingsProps) {
                           <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Unité / Service</span>
                           <span className="text-[15px] font-black text-slate-800 leading-none block truncate max-w-[200px]">
                             {(() => {
+                              if (profile?.role === "ADMIN" || profile?.role === "SUPER_ADMIN" || profile?.role === "BOARD_MEMBER" || profile?.serviceId === "all") {
+                                return "Tous les services du département";
+                              }
                               const matchingService = SERVICES_LIST.find(
                                 (s) =>
                                   s.deptId === profile?.departmentId &&

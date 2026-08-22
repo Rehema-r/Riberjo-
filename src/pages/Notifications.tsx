@@ -22,7 +22,8 @@ import {
   Volume2,
   Radio,
   Sparkles,
-  Inbox
+  Inbox,
+  MessageSquare
 } from 'lucide-react';
 import { collection, query, where, orderBy, onSnapshot, updateDoc, setDoc, addDoc, doc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -51,7 +52,7 @@ export default function Notifications() {
   const { profile } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'unread' | 'tasks' | 'reports' | 'alerts' | 'send-alert'>('all');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'messages' | 'tasks' | 'reports' | 'alerts' | 'send-alert'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Authorized user check
@@ -354,6 +355,7 @@ Veuillez accuser réception de cette notification urgente dans votre Centre de C
                          (n.message || '').toLowerCase().includes((searchTerm || '').toLowerCase());
     
     if (filter === 'unread') return matchesSearch && !n.read;
+    if (filter === 'messages') return matchesSearch && (n.type === 'message' || n.chatId || n.title.toLowerCase().includes('message'));
     if (filter === 'tasks') return matchesSearch && (n.type === 'task' || n.title.includes('Tâche'));
     if (filter === 'reports') return matchesSearch && (n.type === 'report' || n.title.includes('Rapport'));
     if (filter === 'alerts') return matchesSearch && (n.type === 'critical' || (n as any).isCriticalAlert);
@@ -361,6 +363,7 @@ Veuillez accuser réception de cette notification urgente dans votre Centre de C
   });
 
   const getIcon = (type: string, title: string) => {
+    if (type === 'message' || title.toLowerCase().includes('message')) return <MessageSquare className="text-emerald-500" size={18} />;
     if (type === 'task' || title.includes('Tâche')) return <CheckSquare className="text-blue-500" size={18} />;
     if (type === 'report' || title.includes('Rapport')) return <FileText className="text-amber-500" size={18} />;
     if (type === 'critical') return <ShieldAlert className="text-red-500" size={18} />;
@@ -400,6 +403,7 @@ Veuillez accuser réception de cette notification urgente dans votre Centre de C
               {[
                 { id: 'all', label: 'Toutes', count: notifications.length },
                 { id: 'unread', label: 'Non lues', count: notifications.filter(n => !n.read).length },
+                { id: 'messages', label: '💬 Messages', count: notifications.filter(n => n.type === 'message' || n.chatId || n.title.toLowerCase().includes('message')).length },
                 { id: 'tasks', label: 'Tâches', count: notifications.filter(n => n.type === 'task' || n.title.includes('Tâche')).length },
                 { id: 'reports', label: 'Rapports', count: notifications.filter(n => n.type === 'report' || n.title.includes('Rapport')).length },
                 { id: 'alerts', label: '⚠️ Alertes Critiques', count: notifications.filter(n => n.type === 'critical' || (n as any).isCriticalAlert).length },

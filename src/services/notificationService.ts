@@ -6,36 +6,64 @@ export const notificationService = {
   /**
    * Sends a notification to a specific user via Firestore and optionally Email.
    */
-  async notify(userId: string, title: string, message: string, type: 'critical' | 'info' | 'task' | 'report' = 'info') {
+  async notify(
+    userId: string,
+    title: string,
+    message: string,
+    type: 'critical' | 'info' | 'task' | 'report' | 'message' = 'info',
+    extra?: {
+      chatId?: string;
+      senderId?: string;
+      senderName?: string;
+      senderRole?: string;
+      actionUrl?: string;
+      triggerSound?: boolean;
+    }
+  ) {
     try {
-      // 1. Add to Firestore for in-app notification
-      await addDoc(collection(db, 'notifications'), {
-        userId,
-        title,
-        message,
-        read: false,
-        type,
-        createdAt: Date.now()
-      });
-
-      // 2. Trigger browser notification if possible
-      await this.triggerBrowserNotification(title, message);
-
-      // 3. Fetch user profile to check preferences and email
+      // 1. Fetch user profile to check preferences and email
       const userRef = doc(db, 'users', userId);
       const userSnap = await getDocSafe(userRef);
       
+      let sendEmail = false;
       if (userSnap.exists()) {
         const user = userSnap.data() as UserProfile;
         
+        // If user disabled message notifications explicitly
+        if (type === 'message' && user.notificationPrefs?.messages === false) {
+          return;
+        }
+        if (type === 'task' && user.notificationPrefs?.newTasks === false) {
+          return;
+        }
+        if (type === 'report' && user.notificationPrefs?.reportValidations === false) {
+          return;
+        }
+
         // Critical alerts always attempt email if user hasn't explicitly disabled them
-        const sendEmail = type === 'critical' ? user.notificationPrefs?.criticalAlerts !== false : false;
+        sendEmail = type === 'critical' ? user.notificationPrefs?.criticalAlerts !== false : false;
 
         if (sendEmail && user.email) {
           console.log(`Triggering email notification for critical event: ${title}`);
           await this.sendEmail(user.email, `RIBERJO - ALERTE CRITIQUE : ${title}`, message);
         }
       }
+
+      // 2. Add to Firestore for real-time in-app delivery to the recipient
+      await addDoc(collection(db, 'notifications'), {
+        userId,
+        title,
+        message,
+        read: false,
+        type,
+        chatId: extra?.chatId || null,
+        senderId: extra?.senderId || null,
+        senderName: extra?.senderName || null,
+        senderRole: extra?.senderRole || null,
+        actionUrl: extra?.actionUrl || (extra?.chatId ? `chat:${extra.chatId}` : null),
+        triggerSound: extra?.triggerSound ?? true,
+        createdAt: Date.now()
+      });
     } catch (err) {
       console.error("Failed to notify user:", err);
     }
@@ -229,6 +257,17 @@ export const notificationService = {
   },
 
   /**
+   * Direct Store Publication Notification
+   */
+  async notifyStorePublication(itemTitle: string, price: number, publishedBy: string) {
+    const title = `🛒 Article Publié en Boutique : ${itemTitle}`;
+    const msg = `L'article "${itemTitle}" a été mis en ligne au prix de $${price} par ${publishedBy}.`;
+    await this.notifyDG(title, msg, 'info');
+    await this.notifyDepartment('06', title, msg, 'info'); // Marketing & Ventes
+    await this.notifyRole('ADMIN', title, msg, 'info');
+  },
+
+  /**
    * Chat & Instant Messaging Notification
    */
   async notifyChatMessage({
@@ -243,25 +282,33 @@ export const notificationService = {
     text: string;
   }) {
     try {
-      const textPreview = text.length > 70 ? text.substring(0, 67) + '...' : text;
+      const textPreview = text.length > 80 ? text.substring(0, 77) + '...' : text;
+      const extra = {
+        chatId: chat.id,
+        senderId,
+        senderName,
+        actionUrl: `chat:${chat.id}`,
+        triggerSound: true
+      };
 
-      if (chat.type === 'direct' && chat.participants) {
-        const recipientId = chat.participants.find(p => p !== senderId);
-        if (recipientId) {
-          await this.notify(recipientId, `💬 Message Privé de ${senderName}`, textPreview, 'info');
-        }
+      if (chat.type === 'direct' && chat.participants && chat.participants.length > 0) {
+        const recipients = chat.participants.filter(p => p !== senderId);
+        const notifications = recipients.map(recipientId => 
+          this.notify(recipientId, `💬 Nouveau message de ${senderName}`, textPreview, 'message', extra)
+        );
+        await Promise.all(notifications);
       } else if (chat.departmentId) {
         const { query, collection, where, getDocs } = await import('firebase/firestore');
         const q = query(collection(db, 'users'), where('departmentId', '==', chat.departmentId));
         const snap = await getDocs(q);
         const notifications = snap.docs
           .filter(u => u.id !== senderId)
-          .map(u => this.notify(u.id, `💬 [${chat.name || 'Département'}] ${senderName}`, textPreview, 'info'));
+          .map(u => this.notify(u.id, `💬 [${chat.name || 'Département'}] ${senderName}`, textPreview, 'message', extra));
         await Promise.all(notifications);
       } else if (chat.participants && chat.participants.length > 0) {
         const notifications = chat.participants
           .filter(pId => pId !== senderId)
-          .map(pId => this.notify(pId, `💬 [${chat.name || 'Discussion'}] ${senderName}`, textPreview, 'info'));
+          .map(pId => this.notify(pId, `💬 [${chat.name || 'Discussion'}] ${senderName}`, textPreview, 'message', extra));
         await Promise.all(notifications);
       }
     } catch (err) {

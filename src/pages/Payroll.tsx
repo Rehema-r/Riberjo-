@@ -5,8 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { Payroll, UserProfile } from '../types';
 import { DollarSign, Download, TrendingUp, TrendingDown, CreditCard, FileText, Calendar as CalendarIcon, CheckCircle2, Search, Printer, ShieldCheck, Calculator } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export function calculateCongolesePayroll(
   baseSalary: number,
@@ -214,7 +214,7 @@ export default function PayrollPage() {
     const cnssWorker = item.cnssWorkerDeduction || Math.round(gross * 0.05);
     const ipr = item.iprDeduction || Math.round(item.deductions - cnssWorker);
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: 82,
       head: [['Désignation de la Rubrique', 'Base de Calcul', 'Gains ($)', 'Retenues ($)']],
       body: [

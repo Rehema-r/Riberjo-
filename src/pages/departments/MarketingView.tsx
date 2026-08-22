@@ -426,6 +426,19 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
     }
   };
 
+  // Change client type
+  const handleClientTypeChange = async (itemId: string, newType: ClientType) => {
+    try {
+      await updateDoc(doc(db, 'clients', itemId), { type: newType });
+      await updateDoc(doc(db, 'users', itemId), { type: newType });
+      if (selectedClient && selectedClient.id === itemId) {
+        setSelectedClient(prev => prev ? { ...prev, type: newType } : null);
+      }
+    } catch (err) {
+      console.error("Error updating client type:", err);
+    }
+  };
+
   // Delete client profile
   const handleDeleteClient = async (itemId: string) => {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce client ? Toutes ses données seront retirées.")) return;
@@ -1646,6 +1659,23 @@ export default function MarketingView({ activeSpace = 'USER' }: { activeSpace?: 
                             {selectedClient.email ? `Riberjo${selectedClient.id.split('-').pop()}` : "Riberjo2026!"}
                           </span>
                         </div>
+                      </div>
+
+                      <div className="bg-slate-50 dark:bg-slate-850 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Statut & Type de Client</label>
+                        <select
+                          value={selectedClient.type || 'STANDARD'}
+                          onChange={(e) => handleClientTypeChange(selectedClient.id, e.target.value as ClientType)}
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        >
+                          <option value="STANDARD">Client Standard</option>
+                          <option value="PREMIUM">Client Premium ⭐</option>
+                          <option value="PARTNER">Client Partenaire 🤝</option>
+                          <option value="ORGANIZATION">Entreprise / Organisation</option>
+                          <option value="COOPERATIVE">Coopérative Agricole</option>
+                          <option value="PARENT">Parent d'élève</option>
+                          <option value="PATIENT">Patient Médical</option>
+                        </select>
                       </div>
 
                       {(activeSpace === 'SUPER_USER' || activeSpace === 'ADMIN') && (

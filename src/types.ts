@@ -189,6 +189,7 @@ export interface NotificationPrefs {
   reportValidations: boolean;
   criticalAlerts: boolean;
   mentions: boolean;
+  messages?: boolean;
   departmentUpdates: boolean;
 }
 
@@ -237,6 +238,11 @@ export interface Asset {
   imageUrl?: string; // Added to match component
   description?: string; // Added to match component
   lastRefill?: number; // Added to match component
+  workflowStatus?: 'draft' | 'proposal_pending_marketing' | 'pending_dg_approval' | 'published' | 'rejected';
+  sellingPrice?: number;
+  commercialPitch?: string;
+  publishedBy?: string;
+  publishedAt?: number;
 }
 
 export interface Protocol {
@@ -415,7 +421,7 @@ export interface AppNotification {
   title: string;
   message: string;
   read: boolean;
-  type: 'critical' | 'info' | 'task' | 'report';
+  type: 'critical' | 'info' | 'task' | 'report' | 'message';
   createdAt: number;
   isCriticalAlert?: boolean;
   alertSeverity?: 'critical' | 'warning' | 'info';
@@ -423,6 +429,8 @@ export interface AppNotification {
   senderId?: string;
   senderName?: string;
   senderRole?: string;
+  chatId?: string;
+  actionUrl?: string;
 }
 
 export interface ActivityLog {

@@ -250,8 +250,10 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
         generatedPass = customPassword || generatePassword(formData.fullName, yearStr);
       }
 
+      const isAdmRole = formData.role === "ADMIN" || formData.role === "SUPER_ADMIN" || formData.role === "BOARD_MEMBER";
       const newUser = {
         ...formData,
+        serviceId: isAdmRole ? "all" : formData.serviceId,
         matricule,
         password: generatedPass,
         status: "active",
@@ -395,8 +397,13 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
     e.preventDefault();
     if (!selectedUser) return;
     setIsUpdating(selectedUser.id);
+    const isAdmRole = editData.role === "ADMIN" || editData.role === "SUPER_ADMIN" || editData.role === "BOARD_MEMBER";
+    const finalEditData = {
+      ...editData,
+      serviceId: isAdmRole ? "all" : editData.serviceId
+    };
     try {
-      await updateDoc(doc(db, "users", selectedUser.id), editData);
+      await updateDoc(doc(db, "users", selectedUser.id), finalEditData);
       setIsDetailModalOpen(false);
       fetchData();
     } catch (err) {
@@ -707,6 +714,9 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
         DEPARTMENTS.find((d) => d.id === u.departmentId)?.name ||
         u.departmentId,
       "Service / Unité": (() => {
+        if (u.role === "ADMIN" || u.role === "SUPER_ADMIN" || u.role === "BOARD_MEMBER" || u.serviceId === "all") {
+          return u.departmentId === "all" ? "Tous les services (Direction)" : "Tous les services du département";
+        }
         const matchingService = SERVICES_LIST.find(
           (s) => s.deptId === u.departmentId && s.id === u.serviceId,
         );
@@ -1045,8 +1055,8 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                           </span>
                           <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mt-0.5">
                             {(() => {
-                              if (user.departmentId === "all" && user.serviceId === "all") {
-                                return "Tous les services (Admin)";
+                              if (user.role === "ADMIN" || user.role === "SUPER_ADMIN" || user.role === "BOARD_MEMBER" || user.serviceId === "all") {
+                                return user.departmentId === "all" ? "Tous les services (Direction)" : "Tous les services du département";
                               }
                               const matchingService = SERVICES_LIST.find(
                                 (s) =>
@@ -1565,9 +1575,15 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                       <select
                         required
                         value={formData.departmentId}
-                        onChange={(e) =>
-                          setFormData({ ...formData, departmentId: e.target.value })
-                        }
+                        onChange={(e) => {
+                          const newDept = e.target.value;
+                          const isAdm = formData.role === "ADMIN" || formData.role === "SUPER_ADMIN" || formData.role === "BOARD_MEMBER";
+                          setFormData({
+                            ...formData,
+                            departmentId: newDept,
+                            serviceId: isAdm ? "all" : "",
+                          });
+                        }}
                         className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
                       >
                         <option value="">Sélectionner</option>
@@ -1592,15 +1608,18 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                         />
                         <select
                           required
-                          value={formData.serviceId}
+                          value={(formData.role === "ADMIN" || formData.role === "SUPER_ADMIN" || formData.role === "BOARD_MEMBER") ? "all" : formData.serviceId}
                           onChange={(e) =>
                             setFormData({ ...formData, serviceId: e.target.value })
                           }
-                          className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
+                          disabled={formData.role === "ADMIN" || formData.role === "SUPER_ADMIN" || formData.role === "BOARD_MEMBER"}
+                          className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white disabled:opacity-80"
                         >
                           <option value="">Sélectionner un service</option>
-                          {formData.departmentId === "all" && (
-                            <option value="all">Tous les services (Admin)</option>
+                          {(formData.role === "ADMIN" || formData.role === "SUPER_ADMIN" || formData.role === "BOARD_MEMBER" || formData.departmentId === "all") && (
+                            <option value="all">
+                              {formData.departmentId === "all" ? "Tous les services (Direction)" : "Tous les services du département (Admin)"}
+                            </option>
                           )}
                           {SERVICES_LIST.filter(
                             (s) => s.deptId === formData.departmentId,
@@ -1615,6 +1634,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                             </option>
                           )}
                           {formData.departmentId &&
+                            formData.departmentId !== "all" &&
                             SERVICES_LIST.filter(
                               (s) => s.deptId === formData.departmentId,
                             ).length === 0 && (
@@ -1650,9 +1670,15 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                   </label>
                   <select
                     value={formData.role}
-                    onChange={(e) =>
-                      setFormData({ ...formData, role: e.target.value as any })
-                    }
+                    onChange={(e) => {
+                      const newRole = e.target.value as any;
+                      const isAdm = newRole === "ADMIN" || newRole === "SUPER_ADMIN" || newRole === "BOARD_MEMBER";
+                      setFormData({
+                        ...formData,
+                        role: newRole,
+                        serviceId: isAdm ? "all" : (formData.serviceId === "all" ? "" : formData.serviceId),
+                      });
+                    }}
                     className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-900 dark:text-white"
                   >
                     {roles.length > 0 ? (
@@ -1841,6 +1867,9 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                     </p>
                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate">
                       {(() => {
+                        if (selectedUser.role === "ADMIN" || selectedUser.role === "SUPER_ADMIN" || selectedUser.role === "BOARD_MEMBER" || selectedUser.serviceId === "all") {
+                          return selectedUser.departmentId === "all" ? "Tous les services (Direction)" : "Tous les services du département";
+                        }
                         const matchingService = SERVICES_LIST.find(
                           (s) =>
                             s.deptId === selectedUser.departmentId &&
@@ -2015,13 +2044,15 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                           )
                         }
                         value={editData.departmentId || ""}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const newDept = e.target.value;
+                          const isAdm = editData.role === "ADMIN" || editData.role === "SUPER_ADMIN" || editData.role === "BOARD_MEMBER";
                           setEditData({
                             ...editData,
-                            departmentId: e.target.value,
-                            serviceId: "",
-                          })
-                        }
+                            departmentId: newDept,
+                            serviceId: isAdm ? "all" : "",
+                          });
+                        }}
                         className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
                       >
                         <option value="">Sélectionner</option>
@@ -2041,15 +2072,20 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                           !(
                             profile?.role === "ADMIN" ||
                             profile?.role === "SUPER_ADMIN"
-                          )
+                          ) || editData.role === "ADMIN" || editData.role === "SUPER_ADMIN" || editData.role === "BOARD_MEMBER"
                         }
-                        value={editData.serviceId || ""}
+                        value={(editData.role === "ADMIN" || editData.role === "SUPER_ADMIN" || editData.role === "BOARD_MEMBER") ? "all" : (editData.serviceId || "")}
                         onChange={(e) =>
                           setEditData({ ...editData, serviceId: e.target.value })
                         }
-                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white disabled:opacity-80"
                       >
                         <option value="">Sélectionner un service</option>
+                        {(editData.role === "ADMIN" || editData.role === "SUPER_ADMIN" || editData.role === "BOARD_MEMBER" || editData.departmentId === "all") && (
+                          <option value="all">
+                            {editData.departmentId === "all" ? "Tous les services (Direction)" : "Tous les services du département (Admin)"}
+                          </option>
+                        )}
                         {SERVICES_LIST.filter(
                           (s) => s.deptId === editData.departmentId,
                         ).map((s) => (
@@ -2063,6 +2099,7 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                           </option>
                         )}
                         {editData.departmentId &&
+                          editData.departmentId !== "all" &&
                           SERVICES_LIST.filter(
                             (s) => s.deptId === editData.departmentId,
                           ).length === 0 && (
@@ -2082,9 +2119,15 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                           )
                         }
                         value={editData.role || "USER"}
-                        onChange={(e) =>
-                          setEditData({ ...editData, role: e.target.value as any })
-                        }
+                        onChange={(e) => {
+                          const newRole = e.target.value as any;
+                          const isAdm = newRole === "ADMIN" || newRole === "SUPER_ADMIN" || newRole === "BOARD_MEMBER";
+                          setEditData({
+                            ...editData,
+                            role: newRole,
+                            serviceId: isAdm ? "all" : (editData.serviceId === "all" ? "" : editData.serviceId),
+                          });
+                        }}
                         className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
                       >
                         <option value="USER">Travailleur</option>
@@ -2339,6 +2382,9 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                                 <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest font-sans">Service</span>
                                 <span className="text-[9px] font-black text-slate-900 truncate max-w-[110px]">
                                   {(() => {
+                                    if (selectedUser.role === "ADMIN" || selectedUser.role === "SUPER_ADMIN" || selectedUser.role === "BOARD_MEMBER" || selectedUser.serviceId === "all") {
+                                      return "Tous les services";
+                                    }
                                     const matchingService = SERVICES_LIST.find(
                                       (s) =>
                                         s.deptId === selectedUser.departmentId &&
@@ -2513,6 +2559,9 @@ export default function Users({ initialActiveTab }: { initialActiveTab?: string 
                                 <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest block">Unité / Service</span>
                                 <span className="text-[15px] font-black text-slate-800 leading-none block truncate max-w-[200px]">
                                   {(() => {
+                                    if (selectedUser.role === "ADMIN" || selectedUser.role === "SUPER_ADMIN" || selectedUser.role === "BOARD_MEMBER" || selectedUser.serviceId === "all") {
+                                      return "Tous les services du département";
+                                    }
                                     const matchingService = SERVICES_LIST.find(
                                       (s) =>
                                         s.deptId === selectedUser.departmentId &&

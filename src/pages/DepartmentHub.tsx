@@ -7,6 +7,7 @@ import FinanceView from './departments/FinanceView';
 import LogisticsView from './departments/LogisticsView';
 import MarketingView from './departments/MarketingView';
 import HRView from './departments/HRView';
+import SchoolView from './departments/SchoolView';
 
 export default function DepartmentHub({ departmentId }: { departmentId?: string }) {
   const { profile } = useAuth();
@@ -53,6 +54,8 @@ export default function DepartmentHub({ departmentId }: { departmentId?: string 
         return <LogisticsView activeSpace={activeSpace} />;
       case '06':
         return <MarketingView activeSpace={activeSpace} />;
+      case '07':
+        return <SchoolView activeSpace={activeSpace} />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full p-12 text-center">

@@ -187,7 +187,7 @@ export default function ClientDashboard({ onPageChange }: ClientDashboardProps) 
                  <div className="text-center space-y-1 mb-8">
                     <h2 className="text-xl font-black uppercase tracking-tight">{profile?.fullName}</h2>
                     <p className="text-emerald-500 font-mono text-sm font-bold">{profile?.id}</p>
-                    <p className="text-white/40 text-[10px] font-black uppercase tracking-widest pt-2">Client Partenaire</p>
+                    <p className="text-white/40 text-[10px] font-black uppercase tracking-widest pt-2">Client {(profile as any)?.type || profile?.role || 'STANDARD'}</p>
                  </div>
 
                  <button 
